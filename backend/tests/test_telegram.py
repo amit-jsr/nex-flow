@@ -1,4 +1,4 @@
-from app.main import app
+from main import app
 
 
 def test_telegram_and_health_routes_are_exposed() -> None:

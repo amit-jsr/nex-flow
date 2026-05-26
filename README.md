@@ -5,7 +5,7 @@ Full-stack scaffold for configuring agents, persisting workflows, and monitoring
 ## Run The Frontend
 
 ```bash
-cd frontend & npm run dev
+cd frontend
 npm install
 npm run dev
 ```
@@ -28,51 +28,33 @@ npm run start
 
 ```text
 frontend/
-  app/
-    layout.tsx          App shell metadata
-    page.tsx            Dashboard route
-    agents/
-      page.tsx
-      [id]/page.tsx
-    workflows/
-      page.tsx
-      [id]/page.tsx
-    runs/
-      [id]/page.tsx
-    tools/page.tsx      Existing tool catalog route
-  components/
-    PlatformConsole.tsx Preserved interactive console shell
-    AgentForm.tsx
-    WorkflowBuilder.tsx
-    AgentNode.tsx
-    RunMonitor.tsx
-    TokenUsageBar.tsx
-  lib/
-    api.ts              Typed backend API access
-    useWebSocket.ts     Live run event hook
-  Dockerfile
+  src/
+    app/
+      layout.tsx        App shell metadata
+      page.tsx          Dashboard route
+      agents/
+        page.tsx
+        [id]/page.tsx
+      workflows/
+        page.tsx
+        [id]/page.tsx
+      runs/
+        [id]/page.tsx
+    components/
+      PlatformConsole.tsx
 backend/
-  app/
-    main.py             FastAPI application and startup schema creation
-    config.py           Environment-driven application settings
-    database.py         Async SQLAlchemy engine/session setup
-    models/             SQLAlchemy domain models
-      agent.py
-      workflow.py
-      run.py
-      message.py
-      tool.py           Persistent tool catalog used by the UI
-    schemas/            Pydantic API request/response schemas
+  models/               SQLAlchemy domain models
+  schemas/              Pydantic API request/response schemas
+  api/
+    deps.py             Shared FastAPI dependencies
     routers/            CRUD/query, Telegram, and WebSocket endpoints
-    runtime/            Agent/workflow/tool extension points
-    channels/           External channel integrations
-    templates/          Starter workflow definitions
+  main.py               FastAPI application and startup schema creation
+  config.py             Environment-driven application settings
+  database.py           Async SQLAlchemy engine/session setup
   tests/
     test_agents.py
     test_workflow_execution.py
     test_telegram.py
-  alembic/              Migration home for the next schema phase
-  Dockerfile
   requirements.txt
 ```
 
@@ -136,7 +118,7 @@ Only run `docker compose down -v` when you intentionally want to delete the loca
 With PostgreSQL running, launch the API from the repository root:
 
 ```bash
-PYTHONPATH=backend uvicorn app.main:app --reload --port 8000
+PYTHONPATH=backend uvicorn main:app --reload --port 8000
 ```
 
 On startup, SQLAlchemy creates these persistent tables if they do not exist:
@@ -178,7 +160,7 @@ curl http://localhost:8000/runs/
 
 ## API Scope
 
-The backend currently provides persistent CRUD/query storage. The frontend route and typed integration modules are in place; the preserved console still uses its local demo data until API wiring is completed. Telegram and WebSocket route entry points are present, while agent execution, LLM calls, and Redis live streaming are later layers.
+The backend currently provides persistent CRUD/query storage. The preserved console still uses local demo data until API wiring is completed. Telegram and WebSocket route entry points are present, while agent execution and LLM calls are later layers.
 
 - `GET /agents`
 - `POST /agents`

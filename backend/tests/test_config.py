@@ -1,4 +1,4 @@
-from app.config import Settings
+from config import Settings
 
 
 def test_xai_defaults_are_configured() -> None:

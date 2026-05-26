@@ -1,6 +1,6 @@
-from app.main import app
-from app.models import Base
-from app.schemas import WorkflowCreate
+from main import app
+from models import Base
+from schemas import WorkflowCreate
 
 
 def test_workflow_run_tables_are_registered() -> None:

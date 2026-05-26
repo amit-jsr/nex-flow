@@ -1,6 +1,6 @@
-from app.main import app
-from app.models import Base
-from app.schemas import AgentCreate
+from main import app
+from models import Base
+from schemas import AgentCreate
 
 
 def test_agent_related_tables_are_registered() -> None:
