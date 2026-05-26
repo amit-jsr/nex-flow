@@ -5,9 +5,9 @@ Full-stack scaffold for configuring agents, persisting workflows, and monitoring
 ## Run The Frontend
 
 ```bash
-cd frontend
+cd frontend & npm run dev
 npm install
-yo
+npm run dev
 ```
 
 Open:
