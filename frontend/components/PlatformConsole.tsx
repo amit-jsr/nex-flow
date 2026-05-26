@@ -34,13 +34,13 @@ const settingsMarkup = `
           <span class="panel-title">LLM Providers</span>
           <span>Connect model providers for live agent runs.</span>
         </div>
-        <span class="badge b-amber">Required</span>
+        <span class="badge b-red">Required</span>
       </div>
       <div class="settings-panel-body">
         <div class="credential-grid">
           <div class="credential-card">
             <div class="credential-card-top">
-              <span class="badge b-blue">OpenAI</span>
+              <span class="badge b-purple">OpenAI</span>
             </div>
             <div class="form-group">
               <label class="form-label">OpenAI API key</label>
@@ -49,7 +49,7 @@ const settingsMarkup = `
           </div>
           <div class="credential-card">
             <div class="credential-card-top">
-              <span class="badge b-amber">Anthropic</span>
+              <span class="badge b-purple">Anthropic</span>
             </div>
             <div class="form-group">
               <label class="form-label">Anthropic API key</label>
@@ -127,7 +127,7 @@ const settingsMarkup = `
         </div>
         <div class="model-list">
           <div class="model-provider-card">
-            <div class="model-provider-title"><span class="badge b-blue">OpenAI</span><span class="model-count">4 of 6 enabled</span></div>
+            <div class="model-provider-title"><span class="badge b-purple">OpenAI</span><span class="model-count">4 of 6 enabled</span></div>
             <label class="model-check"><span>gpt-5.4-nano</span><input type="checkbox" checked></label>
             <label class="model-check"><span>gpt-5-nano</span><input type="checkbox" checked></label>
             <label class="model-check"><span>gpt-5.4-mini</span><input type="checkbox" checked></label>
@@ -136,7 +136,7 @@ const settingsMarkup = `
             <label class="model-check"><span>gpt-5.4</span><input type="checkbox"></label>
           </div>
           <div class="model-provider-card">
-            <div class="model-provider-title"><span class="badge b-amber">Anthropic</span><span class="model-count">4 of 6 enabled</span></div>
+            <div class="model-provider-title"><span class="badge b-purple">Anthropic</span><span class="model-count">4 of 6 enabled</span></div>
             <label class="model-check"><span>claude-3-5-haiku</span><input type="checkbox" checked></label>
             <label class="model-check"><span>claude-3-haiku</span><input type="checkbox" checked></label>
             <label class="model-check"><span>claude-sonnet-4</span><input type="checkbox" checked></label>
@@ -193,18 +193,18 @@ const settingsMarkup = `
           <span class="panel-title">Guardrails</span>
           <span>Optional validation layer for agent outputs.</span>
         </div>
-        <span class="badge b-muted">Placeholder</span>
+        <span class="badge b-muted">Future integration</span>
       </div>
       <div class="settings-panel-body">
         <div class="guardrails-copy">
           <strong>Output safety checks</strong>
-          <small>Reserved for validation policies. No runtime enforcement is configured yet.</small>
+          <small>Future integration. No runtime enforcement is configured yet.</small>
         </div>
         <div class="guardrails-fields">
           <div class="form-group">
             <label class="form-label">Library</label>
             <select class="form-input form-select" id="s-guardrails-library" disabled>
-              <option>Guardrails AI (placeholder)</option>
+              <option>Future integration</option>
             </select>
           </div>
           <div class="form-group">
