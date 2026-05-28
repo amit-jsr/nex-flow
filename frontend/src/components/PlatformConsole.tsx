@@ -232,9 +232,10 @@ const mcpPlaceholderMarkup = `
         </div>
       </div>
     </div>
-    <div id="mcp-list" style="display:none"></div>
-    <div id="mcp-catalog" style="display:none"></div>
   </div>`;
+
+const agentsWorkspaceMarkup = `
+  <div class="agents-grid" id="agents-grid"></div>`;
 
 const workflowWorkspaceMarkup = `
   <div class="workflow-workspace">
@@ -250,7 +251,6 @@ const workflowWorkspaceMarkup = `
         <div class="wf-toolbar">
           <div class="wf-toolbar-main">
             <span class="wf-toolbar-title" id="wf-selected-title">Workflow Builder</span>
-            <span class="wf-toolbar-sub" id="wf-selected-sub">Select a workflow to inspect its agent chain</span>
           </div>
           <div class="wf-toolbar-actions">
             <button class="btn btn-ghost btn-sm" onclick="editSelectedWorkflow()">Edit</button>
@@ -265,7 +265,51 @@ const workflowWorkspaceMarkup = `
     </section>
   </div>`;
 
+const agentsRenderScript = `
+let agentSearchQuery='';
+function filterAgents(value){
+  agentSearchQuery=(value||'').trim().toLowerCase();
+  renderAgentsGrid();
+}
+function renderAgentsGrid(){
+  const grid=document.getElementById('agents-grid');
+  const search=document.getElementById('agent-search');
+  if(!grid)return;
+  if(search && search.value!==agentSearchQuery) search.value=agentSearchQuery;
+  const agents=agentSearchQuery
+    ? DB.agents.filter(a=>[a.name,a.desc,a.model,a.role,a.status,...a.tools].join(' ').toLowerCase().includes(agentSearchQuery))
+    : DB.agents;
+  if(!DB.agents.length){
+    grid.innerHTML='<div class="empty" style="grid-column:1/-1"><div class="empty-icon">Agents</div><div class="empty-title">No agents yet</div><div class="empty-sub">Create your first agent to get started</div><button class="btn btn-primary" style="margin-top:10px" onclick="openAgentModal()">Create Agent</button></div>';
+    return;
+  }
+  if(!agents.length){
+    grid.innerHTML='<div class="empty agent-search-empty" style="grid-column:1/-1"><div class="empty-title">No matching agents</div><div class="empty-sub">Try a different name, status, model, or tool.</div></div>';
+    return;
+  }
+  grid.innerHTML=agents.map(a=>
+    '<div class="agent-card" onclick="showAgentDetail(\\''+a.id+'\\')">'+
+      '<div class="ac-top">'+
+        '<div class="ac-avatar" style="background:'+agentColor(a.role)+'">'+iconMark(a.emoji)+'</div>'+
+        '<div class="ac-menu"><span class="badge '+statusClass(a.status)+'" style="font-size:9.5px"><div class="badge-dot"></div>'+a.status+'</span></div>'+
+      '</div>'+
+      '<div class="ac-name">'+a.name+'</div>'+
+      '<div class="ac-desc">'+(a.desc||'No description')+'</div>'+
+      '<div class="ac-footer">'+
+        '<div class="tool-chips">'+a.tools.map(t=>'<span class="chip active">'+t+'</span>').join('')+'</div>'+
+        '<div class="ac-runs">'+a.runs+' runs</div>'+
+      '</div>'+
+    '</div>'
+  ).join('');
+}
+`;
+
 const workflowRenderScript = `
+let workflowSearchQuery='';
+function filterWorkflows(value){
+  workflowSearchQuery=(value||'').trim().toLowerCase();
+  renderWorkflowsPage();
+}
 function currentWorkflowId(){
   if(!DB.workflows.length) return '';
   if(!window.__selectedWorkflowId || !wfById(window.__selectedWorkflowId)) window.__selectedWorkflowId=DB.workflows[0].id;
@@ -292,20 +336,23 @@ function editSelectedWorkflow(){
 }
 function renderWorkflowsPage(){
   const body=document.getElementById('wf-list-body');
+  const search=document.getElementById('workflow-search');
   const activeId=currentWorkflowId();
   const title=document.getElementById('wf-selected-title');
-  const sub=document.getElementById('wf-selected-sub');
   const summary=document.getElementById('wf-selected-summary');
   if(!body) return;
+  if(search && search.value!==workflowSearchQuery) search.value=workflowSearchQuery;
   if(!DB.workflows.length){
     body.innerHTML='<div class="empty workflow-empty"><div class="empty-icon">Workflow</div><div class="empty-title">No workflows</div><div class="empty-sub">Build your first workflow to orchestrate agents</div></div>';
     if(title) title.textContent='Workflow Builder';
-    if(sub) sub.textContent='Create a workflow to inspect its agent chain';
     if(summary) summary.innerHTML='';
     renderWfCanvas();
     return;
   }
-  body.innerHTML=DB.workflows.map(w=>{
+  const workflows=workflowSearchQuery
+    ? DB.workflows.filter(w=>[w.name,w.desc,w.trigger].join(' ').toLowerCase().includes(workflowSearchQuery))
+    : DB.workflows;
+  body.innerHTML=workflows.length ? workflows.map(w=>{
     const wfRuns=DB.runs.filter(r=>r.workflow===w.id).length;
     const agentsHtml=w.agents.map(id=>{const a=agentById(id);return a?'<span class="wf-agent-icon" title="'+a.name+'">'+iconMark(a.emoji)+'</span>':'';}).join('') || '<span class="text-muted">No agents</span>';
     return '<div class="workflow-row '+(w.id===activeId?'active':'')+'" onclick="selectWorkflow(\\''+w.id+'\\')">'+
@@ -314,10 +361,9 @@ function renderWorkflowsPage(){
       '<div class="workflow-row-meta"><span class="badge b-muted">'+w.trigger+'</span><span class="mono">'+wfRuns+' runs</span></div>'+
       '<div class="workflow-row-agents">'+agentsHtml+'</div>'+
     '</div>';
-  }).join('');
+  }).join('') : '<div class="empty workflow-empty"><div class="empty-title">No matching workflows</div><div class="empty-sub">Try another name, description, or trigger.</div></div>';
   const active=wfById(activeId);
   if(title) title.textContent=active?.name||'Workflow Builder';
-  if(sub) sub.textContent=active ? active.agents.length+' agents · '+active.trigger+' trigger · '+active.retries+' retries' : 'Select a workflow';
   if(summary && active){
     const agents=active.agents.map(id=>agentById(id)).filter(Boolean);
     summary.innerHTML='<div class="workflow-summary-copy">'+(active.desc||'No description')+'</div>'+
@@ -508,6 +554,7 @@ export default function PlatformConsole({ initialPage = "dashboard" }: { initial
   useEffect(() => {
     if (!rootRef.current) return;
     rootRef.current.innerHTML = markup;
+    rootRef.current.querySelector("#runs-stream-panel .runs-log-panel")?.remove();
     const settingsWrap = rootRef.current.querySelector("#page-settings .settings-wrap");
     if (settingsWrap) {
       settingsWrap.className = "settings-wrap";
@@ -516,6 +563,10 @@ export default function PlatformConsole({ initialPage = "dashboard" }: { initial
     const mcpContent = rootRef.current.querySelector("#page-mcp .content");
     if (mcpContent) {
       mcpContent.innerHTML = mcpPlaceholderMarkup;
+    }
+    const agentsContent = rootRef.current.querySelector("#page-agents .content");
+    if (agentsContent) {
+      agentsContent.innerHTML = agentsWorkspaceMarkup;
     }
     const workflowsContent = rootRef.current.querySelector("#page-workflows .content");
     if (workflowsContent) {
@@ -609,8 +660,18 @@ export default function PlatformConsole({ initialPage = "dashboard" }: { initial
       .replace("  const mcpTools=TOOL_REGISTRY.filter(t=>t.source==='MCP').length;\n", "  const mcpTools=0;\n")
       .replace(
         "const PAGE_ACTIONS={",
-        'const PAGE_ACTIONS={\n  settings:`<button class="btn btn-primary" onclick="saveSettings()">Save settings</button>`,',
+        'const PAGE_ACTIONS={\n  settings:`<button class="btn btn-primary" onclick="saveSettings()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save Settings</button>`,',
       )
+      .replace(/dashboard:`<button class="btn btn-primary".*?New Run<\/button>`/, "dashboard:``")
+      .replace(
+        'agents:`<button class="btn btn-primary"',
+        'agents:`<label class="collection-search topbar-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input class="form-input" id="agent-search" type="search" placeholder="Search agents" aria-label="Search agents" oninput="filterAgents(this.value)"></label><button class="btn btn-primary"',
+      )
+      .replace(
+        'workflows:`<button class="btn btn-primary"',
+        'workflows:`<label class="collection-search topbar-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input class="form-input" id="workflow-search" type="search" placeholder="Search workflows" aria-label="Search workflows" oninput="filterWorkflows(this.value)"></label><button class="btn btn-primary"',
+      )
+      .replace(/function renderAgentsGrid\(\)\{.*?\n\}\n\nfunction openAgentModal/s, `${agentsRenderScript.trim()}\n\nfunction openAgentModal`)
       .replace(/function renderWorkflowsPage\(\)\{.*?\n\}\n\nfunction resetWfForm/s, `${workflowRenderScript}\n\nfunction resetWfForm`)
       .replace(/function clearCanvas\(\)\{.*?\n\}\nfunction setWfAgent\(\)\{.*?\n\}/s, workflowCanvasActionsScript.trim())
       .replace(/function addWfAgentRow\(agentId=''\)\{.*?\n\}/s, workflowAgentRowScript.trim())
