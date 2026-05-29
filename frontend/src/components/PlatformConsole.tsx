@@ -548,6 +548,281 @@ function saveWorkflow(){
 }
 `;
 
+const apiWiringScript = `
+const API_BASE=localStorage.getItem('nxflow.apiBase')||'http://localhost:8000';
+async function apiFetch(path,options={}){
+  const res=await fetch(API_BASE+path,{headers:{'Content-Type':'application/json',...(options.headers||{})},...options});
+  if(!res.ok){
+    let detail='API request failed';
+    try{const body=await res.json();detail=body.detail||detail;}catch{}
+    throw new Error(detail);
+  }
+  if(res.status===204)return null;
+  return res.json();
+}
+function uiMeta(entity){
+  return entity?.guardrails?.ui || entity?.metadata?.ui || {};
+}
+function workflowMeta(workflow){
+  return (workflow.nodes||[]).find(n=>n.type==='metadata')?.ui || {};
+}
+function apiAgentToUi(agent){
+  const meta=uiMeta(agent);
+  return {
+    id:agent.id,
+    name:agent.name,
+    emoji:meta.emoji||'bot',
+    model:agent.model,
+    role:agent.role||'specialist',
+    desc:meta.desc||agent.role||'',
+    prompt:agent.system_prompt||'',
+    tools:agent.tools||[],
+    tokens:agent.max_tokens||agent.limits?.max_tokens||2000,
+    temp:agent.temperature??agent.limits?.temperature??0.7,
+    status:'active',
+    runs:0,
+    created:agent.created_at?new Date(agent.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—',
+    channel:agent.channel||'',
+    memory_enabled:agent.memory_enabled,
+    limits:agent.limits||{},
+    memory_config:agent.memory_config||{},
+  };
+}
+function workflowAgentIds(workflow){
+  return (workflow.nodes||[]).filter(n=>n.type==='agent'&&n.agent_id).map(n=>n.agent_id);
+}
+function apiWorkflowToUi(workflow){
+  const meta=workflowMeta(workflow);
+  return {
+    id:workflow.id,
+    name:workflow.name,
+    icon:meta.icon||'workflow',
+    desc:workflow.description||'',
+    trigger:meta.trigger||'manual',
+    retries:meta.retries??3,
+    agents:workflowAgentIds(workflow),
+    notes:meta.notes||'',
+    created:workflow.created_at?new Date(workflow.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—',
+    nodes:workflow.nodes||[],
+    edges:workflow.edges||[],
+  };
+}
+function apiRunToUi(run){
+  return {
+    id:run.id,
+    msg:run.input||'',
+    workflow:run.workflow_id,
+    status:run.status,
+    tokens:run.total_tokens||0,
+    duration:run.ended_at&&run.started_at?(((new Date(run.ended_at)-new Date(run.started_at))/1000).toFixed(1)+'s'):'—',
+    started:run.created_at?new Date(run.created_at).toLocaleString():'—',
+    output:run.output||'',
+    logs:[{type:run.status==='failed'?'err':run.status==='completed'?'ok':'info',agent:'runtime',msg:run.output||run.status}],
+  };
+}
+function apiMessageToUi(message){
+  return {
+    id:message.id,
+    run:message.run_id,
+    agent:message.agent_id,
+    channel:message.channel||'',
+    direction:message.direction||'',
+    content:message.content||'',
+    sender:message.sender_id||'',
+    metadata:message.metadata||{},
+    created:message.created_at?new Date(message.created_at).toLocaleString():'—',
+  };
+}
+function apiEventToLog(event){
+  return {
+    type:event.event_type==='run_failed'?'err':event.event_type==='run_completed'?'ok':event.event_type?.includes('tool')?'tool':'info',
+    agent:event.agent_name||'runtime',
+    msg:event.content||event.event_type,
+    tokens:event.tokens_used||0,
+    cost:event.cost_usd||0,
+    created:event.created_at?new Date(event.created_at).toLocaleTimeString():'—',
+  };
+}
+function agentPayloadFromForm(){
+  const memory=document.getElementById('f-agent-memory').value;
+  const maxTokens=+document.getElementById('f-agent-tokens').value||2000;
+  const temperature=+document.getElementById('f-agent-temp').value||0.7;
+  const maxToolCalls=+document.getElementById('f-agent-tool-calls').value||8;
+  return {
+    name:document.getElementById('f-agent-name').value.trim(),
+    role:document.getElementById('f-agent-personality').value.toLowerCase(),
+    system_prompt:document.getElementById('f-agent-prompt').value.trim(),
+    model:document.getElementById('f-agent-model').value,
+    tools:[...document.querySelectorAll('#f-agent-tools input:checked')].map(i=>i.value),
+    channel:(document.getElementById('f-agent-channel').value||'').toLowerCase()==='none'?null:document.getElementById('f-agent-channel').value.toLowerCase(),
+    memory_enabled:memory!=='Off',
+    memory_config:{scope:memory.toLowerCase()},
+    interaction_rules:{tone:document.getElementById('f-agent-personality').value,output_format:document.getElementById('f-agent-output-format').value},
+    guardrails:{ui:{emoji:document.getElementById('f-agent-emoji').value,desc:document.getElementById('f-agent-desc').value}},
+    limits:{max_tool_calls:maxToolCalls,timeout_seconds:+document.getElementById('f-agent-timeout').value||120,max_tokens:maxTokens,temperature},
+    max_tokens:maxTokens,
+    temperature,
+  };
+}
+function workflowPayloadFromForm(){
+  const agentIds=[...document.querySelectorAll('#f-wf-agents select')].map(s=>s.value).filter(Boolean);
+  const agentNodes=agentIds.map((agentId,index)=>({id:'agent-'+(index+1),type:'agent',agent_id:agentId,label:agentById(agentId)?.name||'Agent '+(index+1)}));
+  const edges=agentNodes.slice(1).map((node,index)=>({id:'edge-'+(index+1),source:agentNodes[index].id,target:node.id,condition:'next'}));
+  return {
+    name:document.getElementById('f-wf-name').value.trim(),
+    description:document.getElementById('f-wf-desc').value,
+    nodes:[
+      {id:'metadata',type:'metadata',ui:{icon:document.getElementById('f-wf-icon').value||'workflow',trigger:document.getElementById('f-wf-trigger').value,retries:+document.getElementById('f-wf-retries').value||0,notes:document.getElementById('f-wf-notes').value}},
+      ...agentNodes,
+    ],
+    edges,
+    is_template:false,
+  };
+}
+async function loadBackendData(){
+  try{
+    const [agents,workflows,runs,messages]=await Promise.all([
+      apiFetch('/agents/'),
+      apiFetch('/workflows/'),
+      apiFetch('/runs/'),
+      apiFetch('/messages/'),
+    ]);
+    DB.agents=agents.map(apiAgentToUi);
+    DB.workflows=workflows.map(apiWorkflowToUi);
+    DB.runs=runs.map(apiRunToUi);
+    DB.messages=messages.map(apiMessageToUi);
+    DB.agents.forEach(agent=>{agent.runs=DB.runs.filter(run=>workflowAgentIds({nodes:DB.workflows.find(w=>w.id===run.workflow)?.nodes||[]}).includes(agent.id)).length;});
+    updatePills();
+    renderPage(currentPage());
+    if(currentPage()==='workflows') renderWorkflowsPage();
+    if(currentPage()==='telegram') renderTelegram();
+    notify('Backend data loaded ✓');
+  }catch(error){
+    notify('Using demo data. Backend unavailable: '+error.message,false);
+  }
+}
+async function showRunDetail(id){
+  const r=DB.runs.find(x=>x.id===id);if(!r)return;
+  const wf=wfById(r.workflow);
+  let logs=r.logs||[];
+  try{
+    const events=await apiFetch('/runs/'+id+'/events');
+    logs=events.map(apiEventToLog);
+    r.logs=logs;
+  }catch(error){
+    logs=r.logs||[{type:'err',agent:'runtime',msg:'Could not load backend events: '+error.message}];
+  }
+  const logHtml=logs.length
+    ? logs.map(l=>'<div class="run-log-line"><span class="t-ts">'+(l.created||'——')+'</span><span class="'+({info:'t-info',tool:'t-tool',ok:'t-ok',err:'t-err',sub:'t-sub'}[l.type]||'t-dim')+'">['+l.agent+']</span><span>'+l.msg+'</span></div>').join('')
+    : '<div class="run-log-line"><span class="t-dim">No persisted events yet.</span></div>';
+  document.getElementById('runDetailBody').innerHTML=\`
+    <div class="kv-grid">
+      <div class="kv"><div class="kv-label">Run ID</div><div class="kv-val mono" style="font-size:12px">\${r.id}</div></div>
+      <div class="kv"><div class="kv-label">Status</div><div class="kv-val"><span class="badge \${statusClass(r.status)}"><div class="badge-dot"></div>\${r.status}</span></div></div>
+      <div class="kv"><div class="kv-label">Tokens</div><div class="kv-val">\${r.tokens.toLocaleString()}</div></div>
+      <div class="kv"><div class="kv-label">Duration</div><div class="kv-val">\${r.duration}</div></div>
+      <div class="kv"><div class="kv-label">Workflow</div><div class="kv-val">\${wf?.name||'—'}</div></div>
+      <div class="kv"><div class="kv-label">Started</div><div class="kv-val">\${r.started}</div></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Input Message</label>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-size:13px">\${r.msg}</div>
+    </div>
+    \${r.output?'<div class="form-group"><label class="form-label">Output</label><div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-size:13px">'+r.output+'</div></div>':''}
+    <div class="form-group">
+      <label class="form-label">Persisted Run Events</label>
+      <div class="term-body" style="background:#060810;border:1px solid var(--border);border-radius:var(--radius);max-height:300px;padding:12px">\${logHtml}</div>
+    </div>
+  \`;
+  openModal('runDetailModal');
+}
+function renderTelegram(){
+  const sel=document.getElementById('tg-wf');
+  if(sel) sel.innerHTML=DB.workflows.map(w=>\`<option value="\${w.id}">\${iconLabel(w.icon)} - \${w.name}</option>\`).join('');
+  const page=document.getElementById('page-telegram');
+  const content=page?.querySelector('.content');
+  if(!content)return;
+  const messages=(DB.messages||[]).filter(m=>m.channel==='telegram').slice(0,30);
+  const rows=messages.length?messages.map(m=>\`
+    <tr>
+      <td><span class="badge \${m.direction==='inbound'?'b-blue':m.direction==='outbound'?'b-green':'b-purple'}"><div class="badge-dot"></div>\${m.direction||'message'}</span></td>
+      <td style="max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\${m.content}</td>
+      <td class="mono" style="font-size:11px;color:var(--muted)">\${m.sender||'—'}</td>
+      <td class="mono" style="font-size:11px;color:var(--muted)">\${m.run||'—'}</td>
+      <td style="color:var(--muted)">\${m.created}</td>
+    </tr>\`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-title">No Telegram messages yet</div></div></td></tr>';
+  content.innerHTML=\`
+    <div class="panel">
+      <div class="panel-hd"><span class="panel-title">Telegram Messages</span><span class="badge b-muted">\${messages.length} loaded</span></div>
+      <table class="tbl"><thead><tr><th>Direction</th><th>Content</th><th>Sender</th><th>Run</th><th>Created</th></tr></thead><tbody>\${rows}</tbody></table>
+    </div>
+  \`;
+}
+async function saveAgent(){
+  const payload=agentPayloadFromForm();
+  if(!payload.name){notify('Agent name is required',false);return;}
+  if(!payload.system_prompt){notify('System prompt is required',false);return;}
+  try{
+    if(editingAgentId) await apiFetch('/agents/'+editingAgentId,{method:'PATCH',body:JSON.stringify(payload)});
+    else await apiFetch('/agents/',{method:'POST',body:JSON.stringify(payload)});
+    closeModal('agentModal');
+    editingAgentId=null;
+    await loadBackendData();
+    notify('Agent saved to backend ✓');
+  }catch(error){notify(error.message,false);}
+}
+async function saveWorkflow(){
+  const payload=workflowPayloadFromForm();
+  if(!payload.name){notify('Workflow name is required',false);return;}
+  if(payload.nodes.filter(n=>n.type==='agent').length===0){notify('Select at least one agent',false);return;}
+  try{
+    let workflow;
+    if(editingWfId) workflow=await apiFetch('/workflows/'+editingWfId,{method:'PATCH',body:JSON.stringify(payload)});
+    else workflow=await apiFetch('/workflows/',{method:'POST',body:JSON.stringify(payload)});
+    window.__selectedWorkflowId=workflow.id;
+    closeModal('workflowModal');
+    editingWfId=null;
+    wfNodes=[];wfConnections=[];
+    await loadBackendData();
+    notify('Workflow saved to backend ✓');
+  }catch(error){notify(error.message,false);}
+}
+async function triggerRun(){
+  const wfId=document.getElementById('f-run-wf').value;
+  if(!wfId){notify('Create a workflow before starting a run',false);return;}
+  const msg=document.getElementById('f-run-msg').value.trim();
+  if(!msg){notify('Input message is required',false);return;}
+  try{
+    const run=await apiFetch('/workflows/'+wfId+'/runs',{method:'POST',body:JSON.stringify({input:msg,execute:false})});
+    closeModal('runModal');
+    await loadBackendData();
+    notify('Run queued in backend ✓');
+    subscribeRunEvents(run.id);
+  }catch(error){notify(error.message,false);}
+}
+function subscribeRunEvents(runId){
+  if(!runId||window.__nxflowRunSocket?.readyState===WebSocket.OPEN) return;
+  const wsBase=API_BASE.replace(/^http/,'ws');
+  try{
+    const socket=new WebSocket(wsBase+'/ws/runs/'+runId);
+    window.__nxflowRunSocket=socket;
+    socket.onmessage=(event)=>{
+      try{
+        const payload=JSON.parse(event.data);
+        const run=DB.runs.find(r=>r.id===runId);
+        if(run){
+          run.logs=run.logs||[];
+          run.logs.push({type:payload.type==='run_failed'?'err':payload.type==='run_completed'?'ok':'info',agent:payload.agent_name||'runtime',msg:payload.content||payload.type});
+          if(currentPage()==='runs') renderRunsTable();
+        }
+      }catch{}
+    };
+  }catch{}
+}
+window.nxflowRefresh=loadBackendData;
+loadBackendData();
+`;
+
 export default function PlatformConsole({ initialPage = "dashboard" }: { initialPage?: ConsolePage }) {
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -713,7 +988,7 @@ export default function PlatformConsole({ initialPage = "dashboard" }: { initial
         "document.getElementById('topbar-actions').innerHTML=PAGE_ACTIONS['dashboard'];",
         "",
       )
-      .concat(`\n${workflowAgentRowScript.trim()}\n${workflowCanvasActionsScript.trim()}\n${workflowCanvasRenderScript.trim()}\n${workflowSaveScript.trim()}\nif(currentPage()==='workflows') renderWorkflowsPage();`);
+      .concat(`\n${workflowAgentRowScript.trim()}\n${workflowCanvasActionsScript.trim()}\n${workflowCanvasRenderScript.trim()}\n${workflowSaveScript.trim()}\n${apiWiringScript.trim()}\nif(currentPage()==='workflows') renderWorkflowsPage();`);
     document.body.appendChild(scriptTag);
 
     return () => {

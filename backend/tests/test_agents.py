@@ -1,10 +1,22 @@
 from main import app
-from models import Base
-from schemas import AgentCreate
+from datastore.model import Base
+from datastore.schema import AgentCreate
 
 
 def test_agent_related_tables_are_registered() -> None:
     assert {"agents", "tools", "messages"} <= set(Base.metadata.tables)
+
+
+def test_agent_config_columns_are_registered() -> None:
+    agent_columns = set(Base.metadata.tables["agents"].columns.keys())
+    assert {
+        "schedule",
+        "memory_config",
+        "skills",
+        "interaction_rules",
+        "guardrails",
+        "limits",
+    } <= agent_columns
 
 
 def test_agent_and_tool_routes_are_exposed() -> None:
@@ -18,6 +30,14 @@ def test_agent_defaults_validate() -> None:
     agent = AgentCreate(name="Researcher", system_prompt="Research carefully.")
     assert agent.model == "gpt-4o"
     assert agent.memory_enabled is True
+    assert agent.schedule == {}
+    assert agent.memory_config == {}
+    assert agent.skills == []
+    assert agent.interaction_rules == {}
+    assert agent.limits.max_tool_calls == 25
+    assert agent.limits.timeout_seconds == 300
+    assert agent.limits.max_tokens == agent.max_tokens
+    assert agent.limits.temperature == agent.temperature
 
 
 def test_grok_model_names_validate() -> None:
