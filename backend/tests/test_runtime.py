@@ -113,3 +113,48 @@ def test_ordered_agent_nodes_rejects_non_feedback_cycles() -> None:
 
     with pytest.raises(ValueError, match="cycle"):
         ordered_agent_nodes(nodes, edges)
+
+
+def test_stream_payload_detects_tool_call_by_tool_name() -> None:
+    from runtime.workflow_runner import stream_payload_to_event
+
+    payload = {
+        "type": "tool_use",
+        "name": "web_search",
+        "input": {"query": "latest AI news"},
+    }
+    event = stream_payload_to_event(payload)
+    assert event["event_type"] == "tool_call"
+    assert event["metadata"]["tool_name"] == "web_search"
+    assert event["metadata"]["tool_input"] == {"query": "latest AI news"}
+
+
+def test_stream_payload_detects_tool_call_by_tool_use_key() -> None:
+    from runtime.workflow_runner import stream_payload_to_event
+
+    payload = {
+        "tool_use": {"name": "calculator", "input": "2+2"},
+    }
+    event = stream_payload_to_event(payload)
+    assert event["event_type"] == "tool_call"
+    assert event["metadata"]["tool_name"] == "calculator"
+
+
+def test_stream_payload_parses_token_usage() -> None:
+    from runtime.workflow_runner import stream_payload_to_event
+
+    payload = {
+        "type": "message_delta",
+        "text": "final answer",
+        "usage": {"input_tokens": 100, "output_tokens": 50},
+    }
+    event = stream_payload_to_event(payload)
+    assert event["tokens_used"] == 150
+
+
+def test_stream_payload_string_is_text_delta() -> None:
+    from runtime.workflow_runner import stream_payload_to_event
+
+    event = stream_payload_to_event("hello world")
+    assert event["event_type"] == "text_delta"
+    assert event["content"] == "hello world"

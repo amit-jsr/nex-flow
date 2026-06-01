@@ -111,9 +111,9 @@ const settingsMarkup = `
           <div class="form-group">
             <label class="form-label">Default Provider</label>
             <select class="form-input form-select" id="s-default-provider">
+              <option selected>Grok</option>
               <option>OpenAI</option>
               <option>Anthropic</option>
-              <option>Grok</option>
             </select>
           </div>
           <div class="form-group">
@@ -614,6 +614,7 @@ function apiRunToUi(run){
     workflow:run.workflow_id,
     status:run.status,
     tokens:run.total_tokens||0,
+    cost:run.total_cost_usd||0,
     duration:run.ended_at&&run.started_at?(((new Date(run.ended_at)-new Date(run.started_at))/1000).toFixed(1)+'s'):'—',
     started:run.created_at?new Date(run.created_at).toLocaleString():'—',
     output:run.output||'',
@@ -709,20 +710,26 @@ async function showRunDetail(id){
     const events=await apiFetch('/runs/'+id+'/events');
     logs=events.map(apiEventToLog);
     r.logs=logs;
+    r.tokens=events.reduce((sum,event)=>sum+(event.tokens_used||0),0) || r.tokens || 0;
+    r.cost=events.reduce((sum,event)=>sum+(event.cost_usd||0),0) || r.cost || 0;
   }catch(error){
     logs=r.logs||[{type:'err',agent:'runtime',msg:'Could not load backend events: '+error.message}];
   }
+  const totalEventTokens=logs.reduce((sum,l)=>sum+(l.tokens||0),0);
+  const totalEventCost=logs.reduce((sum,l)=>sum+(l.cost||0),0);
   const logHtml=logs.length
-    ? logs.map(l=>'<div class="run-log-line"><span class="t-ts">'+(l.created||'——')+'</span><span class="'+({info:'t-info',tool:'t-tool',ok:'t-ok',err:'t-err',sub:'t-sub'}[l.type]||'t-dim')+'">['+l.agent+']</span><span>'+l.msg+'</span></div>').join('')
+    ? logs.map(l=>'<div class="run-log-line"><span class="t-ts">'+(l.created||'——')+'</span><span class="'+({info:'t-info',tool:'t-tool',ok:'t-ok',err:'t-err',sub:'t-sub'}[l.type]||'t-dim')+'">['+l.agent+']</span><span>'+l.msg+'</span><span class="t-dim" style="margin-left:auto;white-space:nowrap">'+(l.tokens?l.tokens+' tok':'')+(l.cost?(' · $'+Number(l.cost).toFixed(4)):'')+'</span></div>').join('')
     : '<div class="run-log-line"><span class="t-dim">No persisted events yet.</span></div>';
   document.getElementById('runDetailBody').innerHTML=\`
     <div class="kv-grid">
       <div class="kv"><div class="kv-label">Run ID</div><div class="kv-val mono" style="font-size:12px">\${r.id}</div></div>
       <div class="kv"><div class="kv-label">Status</div><div class="kv-val"><span class="badge \${statusClass(r.status)}"><div class="badge-dot"></div>\${r.status}</span></div></div>
       <div class="kv"><div class="kv-label">Tokens</div><div class="kv-val">\${r.tokens.toLocaleString()}</div></div>
+      <div class="kv"><div class="kv-label">Cost</div><div class="kv-val">\${Number(r.cost||0).toFixed(4)}</div></div>
       <div class="kv"><div class="kv-label">Duration</div><div class="kv-val">\${r.duration}</div></div>
       <div class="kv"><div class="kv-label">Workflow</div><div class="kv-val">\${wf?.name||'—'}</div></div>
       <div class="kv"><div class="kv-label">Started</div><div class="kv-val">\${r.started}</div></div>
+      <div class="kv"><div class="kv-label">Event Totals</div><div class="kv-val">\${totalEventTokens.toLocaleString()} tok · \${totalEventCost.toFixed(4)}</div></div>
     </div>
     <div class="form-group">
       <label class="form-label">Input Message</label>
@@ -793,11 +800,35 @@ async function triggerRun(){
   const msg=document.getElementById('f-run-msg').value.trim();
   if(!msg){notify('Input message is required',false);return;}
   try{
-    const run=await apiFetch('/workflows/'+wfId+'/runs',{method:'POST',body:JSON.stringify({input:msg,execute:false})});
+    const run=await apiFetch('/workflows/'+wfId+'/runs',{method:'POST',body:JSON.stringify({input:msg,execute:true})});
     closeModal('runModal');
     await loadBackendData();
-    notify('Run queued in backend ✓');
+    notify('Run started in backend ✓');
     subscribeRunEvents(run.id);
+  }catch(error){notify(error.message,false);}
+}
+async function deleteAgent(id){
+  try{
+    await apiFetch('/agents/'+id,{method:'DELETE'});
+    DB.agents=DB.agents.filter(a=>a.id!==id);
+    DB.workflows=DB.workflows.map(w=>({...w,agents:(w.agents||[]).filter(agentId=>agentId!==id)}));
+    if(editingAgentId===id) editingAgentId=null;
+    updatePills();
+    renderPage(currentPage());
+    notify('Agent deleted from backend');
+  }catch(error){notify(error.message,false);}
+}
+async function deleteWorkflow(id){
+  try{
+    await apiFetch('/workflows/'+id,{method:'DELETE'});
+    DB.workflows=DB.workflows.filter(w=>w.id!==id);
+    DB.runs=DB.runs.filter(r=>r.workflow!==id);
+    if(window.__selectedWorkflowId===id) window.__selectedWorkflowId=DB.workflows[0]?.id||'';
+    if(editingWfId===id) editingWfId=null;
+    wfNodes=[];wfConnections=[];
+    updatePills();
+    renderPage(currentPage());
+    notify('Workflow deleted from backend');
   }catch(error){notify(error.message,false);}
 }
 function subscribeRunEvents(runId){

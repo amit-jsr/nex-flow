@@ -169,20 +169,65 @@ def stream_payload_to_event(payload: Any) -> dict[str, Any]:
             "cost_usd": 0.0,
         }
 
-    content = payload.get("text") or payload.get("data") or payload.get("delta") or payload.get("content")
-    event_type = payload.get("event_type") or payload.get("type") or payload.get("event") or "runtime_event"
+    raw_type = payload.get("event_type") or payload.get("type") or payload.get("event") or ""
+    raw_type_str = str(raw_type).lower()
+
+    # Detect tool-related events from Strands stream
+    tool_name = (
+        payload.get("tool_name")
+        or payload.get("name")
+        or (payload.get("tool_use", {}) or {}).get("name")
+    )
+    tool_input = payload.get("tool_input") or payload.get("input") or (payload.get("tool_use", {}) or {}).get("input")
+    tool_result = payload.get("tool_result") or payload.get("result") or payload.get("output")
+
+    is_tool_call = (
+        "tool" in raw_type_str
+        or tool_name is not None
+        or "tool_use" in payload
+        or raw_type_str in ("tool_use", "tool_call", "tool_start", "tool_result", "tool_end")
+    )
+
+    if is_tool_call:
+        event_type = "tool_call"
+        content = str(tool_result or tool_input or tool_name or "")
+        metadata = {
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+            "tool_result": tool_result,
+            "raw_type": raw_type,
+        }
+    else:
+        # Text delta or generic runtime event
+        content = payload.get("text") or payload.get("data") or payload.get("delta") or payload.get("content")
+        event_type = raw_type_str if raw_type_str else "runtime_event"
+        # Normalize common Strands text event names
+        if event_type in ("text", "content_block_delta", "delta", "output"):
+            event_type = "text_delta"
+        metadata = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"text", "data", "delta", "content", "usage"}
+        }
+
     usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
-    metadata = {
-        key: value
-        for key, value in payload.items()
-        if key not in {"text", "data", "delta", "content", "usage"}
-    }
+    # Also check for token counts in Strands model response format
+    input_tokens = int(usage.get("input_tokens", 0) or 0)
+    output_tokens = int(usage.get("output_tokens", 0) or 0)
+    tokens_used = int(
+        usage.get("tokens", 0)
+        or (input_tokens + output_tokens)
+        or payload.get("tokens_used", 0)
+        or 0
+    )
+    cost_usd = float(usage.get("cost_usd", payload.get("cost_usd", 0.0)) or 0.0)
+
     return {
-        "event_type": str(event_type),
+        "event_type": event_type,
         "content": None if content is None else str(content),
         "metadata": metadata,
-        "tokens_used": int(usage.get("tokens", payload.get("tokens_used", 0)) or 0),
-        "cost_usd": float(usage.get("cost_usd", payload.get("cost_usd", 0.0)) or 0.0),
+        "tokens_used": tokens_used,
+        "cost_usd": cost_usd,
     }
 
 

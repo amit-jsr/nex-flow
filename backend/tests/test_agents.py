@@ -28,7 +28,7 @@ def test_agent_and_tool_routes_are_exposed() -> None:
 
 def test_agent_defaults_validate() -> None:
     agent = AgentCreate(name="Researcher", system_prompt="Research carefully.")
-    assert agent.model == "gpt-4o"
+    assert agent.model == "grok-3"
     assert agent.memory_enabled is True
     assert agent.schedule == {}
     assert agent.memory_config == {}

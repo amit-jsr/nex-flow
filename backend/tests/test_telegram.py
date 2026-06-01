@@ -71,3 +71,18 @@ def test_telegram_client_builds_send_message_request() -> None:
 
     assert send_request.url == "https://api.telegram.org/bottoken-123/sendMessage"
     assert send_request.payload == {"chat_id": "chat-456", "text": "hello"}
+
+
+def test_parse_telegram_edited_message_is_accepted() -> None:
+    parsed = parse_telegram_update(
+        {
+            "update_id": 200,
+            "edited_message": {
+                "message_id": 10,
+                "chat": {"id": 42},
+                "text": "edited text",
+            },
+        }
+    )
+    assert parsed is not None
+    assert parsed.text == "edited text"
