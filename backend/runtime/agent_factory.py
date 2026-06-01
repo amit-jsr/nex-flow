@@ -1,3 +1,5 @@
+"""Builds Strands agent instances from datastore agent configuration."""
+
 from __future__ import annotations
 
 from typing import Any

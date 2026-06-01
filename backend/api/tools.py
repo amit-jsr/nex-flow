@@ -1,3 +1,5 @@
+"""FastAPI routes for tool catalog CRUD operations."""
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status

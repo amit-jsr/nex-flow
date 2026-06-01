@@ -1,3 +1,5 @@
+"""FastAPI routes for listing and managing agent messages."""
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status

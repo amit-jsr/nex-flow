@@ -1,3 +1,5 @@
+"""Executes workflows, streams events, and persists run output."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

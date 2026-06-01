@@ -1,3 +1,5 @@
+"""Tests for the runtime tool registry, agent factory, and event bus."""
+
 import pytest
 
 from datastore.model import Agent

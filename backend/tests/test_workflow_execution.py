@@ -1,3 +1,5 @@
+"""Tests for workflow execution, streaming, and event persistence."""
+
 import pytest
 from pydantic import ValidationError
 from uuid import UUID

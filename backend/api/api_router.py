@@ -1,3 +1,5 @@
+"""Central API router that composes all versioned backend route modules."""
+
 from fastapi import APIRouter
 
 from api import agents, messages, runs, telegram, tools, workflows, ws

@@ -1,3 +1,5 @@
+"""Tests for Telegram parsing, replies, and client behavior."""
+
 from main import app
 from channels import TelegramBotClient, parse_telegram_update, queued_run_reply, start_reply
 from api.telegram import parse_uuid

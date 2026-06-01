@@ -1,65 +1,14 @@
+"""Resolves tool names into callable Strands tools for runtime execution."""
+
 from __future__ import annotations
 
-import ast
-import operator
 from collections.abc import Callable
 from typing import Any
 
+from llm.tools import calculator, http_request, web_search
+
 
 ToolCallable = Callable[..., Any]
-
-
-def _strands_tool(func: ToolCallable) -> ToolCallable:
-    try:
-        from strands import tool
-    except ImportError:
-        return func
-    return tool(func)
-
-
-@_strands_tool
-def calculator(expression: str) -> float:
-    """Evaluate a basic arithmetic expression."""
-
-    operators: dict[type[ast.operator], Callable[[float, float], float]] = {
-        ast.Add: operator.add,
-        ast.Sub: operator.sub,
-        ast.Mult: operator.mul,
-        ast.Div: operator.truediv,
-        ast.Pow: operator.pow,
-        ast.Mod: operator.mod,
-    }
-    unary_operators: dict[type[ast.unaryop], Callable[[float], float]] = {
-        ast.UAdd: operator.pos,
-        ast.USub: operator.neg,
-    }
-
-    def evaluate(node: ast.AST) -> float:
-        if isinstance(node, ast.Expression):
-            return evaluate(node.body)
-        if isinstance(node, ast.Constant) and isinstance(node.value, int | float):
-            return float(node.value)
-        if isinstance(node, ast.BinOp) and type(node.op) in operators:
-            return operators[type(node.op)](evaluate(node.left), evaluate(node.right))
-        if isinstance(node, ast.UnaryOp) and type(node.op) in unary_operators:
-            return unary_operators[type(node.op)](evaluate(node.operand))
-        raise ValueError("Only basic arithmetic expressions are supported")
-
-    return evaluate(ast.parse(expression, mode="eval"))
-
-
-@_strands_tool
-def web_search(query: str) -> str:
-    """Prepare a web search request for the configured search integration."""
-
-    return f"Search requested: {query}"
-
-
-@_strands_tool
-def http_request(url: str, method: str = "GET") -> dict[str, str]:
-    """Prepare an HTTP request for the configured network integration."""
-
-    return {"method": method.upper(), "url": url}
 
 
 class ToolRegistry:

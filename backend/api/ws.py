@@ -1,3 +1,5 @@
+"""WebSocket endpoint for streaming run events to the UI."""
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from runtime import run_event_bus

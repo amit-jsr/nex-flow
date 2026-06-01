@@ -1,3 +1,5 @@
+"""Pydantic schemas for message create and read payloads."""
+
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID

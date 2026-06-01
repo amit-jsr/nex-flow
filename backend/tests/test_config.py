@@ -1,3 +1,5 @@
+"""Tests for application settings and environment defaults."""
+
 from configs.settings import Settings
 
 

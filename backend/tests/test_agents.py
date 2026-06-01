@@ -1,3 +1,5 @@
+"""Tests for agent API behavior and agent schema validation."""
+
 from main import app
 from datastore.model import Base
 from datastore.schema import AgentCreate

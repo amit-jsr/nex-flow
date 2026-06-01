@@ -1,3 +1,5 @@
+"""FastAPI routes for Telegram webhook ingestion and outbound replies."""
+
 from typing import Any
 from uuid import UUID
 

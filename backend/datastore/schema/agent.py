@@ -1,3 +1,5 @@
+"""Pydantic schemas for agent create, update, and read payloads."""
+
 from datetime import datetime
 from typing import Any
 from uuid import UUID

@@ -1,3 +1,5 @@
+"""FastAPI routes for workflow CRUD, templates, and run triggers."""
+
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
