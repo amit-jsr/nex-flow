@@ -1,6 +1,8 @@
+"""FastAPI routes for workflow CRUD, templates, and run triggers."""
+
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,7 +111,10 @@ async def delete_workflow(workflow_id: UUID, db: AsyncSession = Depends(get_db))
 
 @router.post("/{workflow_id}/runs", response_model=RunRead, status_code=status.HTTP_201_CREATED)
 async def create_workflow_run(
-    workflow_id: UUID, payload: WorkflowRunCreate, db: AsyncSession = Depends(get_db)
+    workflow_id: UUID,
+    payload: WorkflowRunCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
 ) -> Run:
     await get_workflow_or_404(workflow_id, db)
     run = Run(workflow_id=workflow_id, input=payload.input, status="pending")
@@ -117,6 +122,14 @@ async def create_workflow_run(
     await db.commit()
     await db.refresh(run)
     if payload.execute:
-        run = await WorkflowRunner(db).run(run.id)
-        await db.refresh(run)
+        background_tasks.add_task(_run_in_background, run.id)
     return run
+
+
+async def _run_in_background(run_id: UUID) -> None:
+    from datastore.database import get_session_factory
+    async with get_session_factory()() as db:
+        try:
+            await WorkflowRunner(db).run(run_id)
+        except Exception:
+            pass

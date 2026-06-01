@@ -1,3 +1,5 @@
+"""In-memory pub/sub bus for streaming workflow run events."""
+
 from __future__ import annotations
 
 import asyncio

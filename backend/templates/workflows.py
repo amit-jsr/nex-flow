@@ -1,3 +1,5 @@
+"""Built-in workflow templates used for quick-start creation flows."""
+
 from __future__ import annotations
 
 from typing import Any

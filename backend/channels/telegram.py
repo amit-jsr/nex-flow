@@ -1,3 +1,5 @@
+"""Telegram client helpers for parsing updates and sending replies."""
+
 from __future__ import annotations
 
 import asyncio

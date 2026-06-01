@@ -1,3 +1,5 @@
+"""Pydantic schemas for agent create, update, and read payloads."""
+
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -18,7 +20,8 @@ class AgentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     role: str | None = Field(default=None, max_length=200)
     system_prompt: str = Field(min_length=1)
-    model: str = Field(default="gpt-4o", max_length=50)
+    provider: str = Field(default="grok", max_length=50)
+    model: str = Field(default="grok-3", max_length=100)
     tools: list[str] = Field(default_factory=list)
     schedule: dict[str, Any] = Field(default_factory=dict)
     memory_enabled: bool = True
@@ -42,7 +45,8 @@ class AgentUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     role: str | None = Field(default=None, max_length=200)
     system_prompt: str | None = Field(default=None, min_length=1)
-    model: str | None = Field(default=None, max_length=50)
+    provider: str | None = Field(default=None, max_length=50)
+    model: str | None = Field(default=None, max_length=100)
     tools: list[str] | None = None
     schedule: dict[str, Any] | None = None
     memory_enabled: bool | None = None

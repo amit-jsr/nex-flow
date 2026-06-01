@@ -1,3 +1,5 @@
+"""Channel integration exports for Telegram delivery and parsing helpers."""
+
 from channels.telegram import (
     TelegramBotClient,
     TelegramMessage,

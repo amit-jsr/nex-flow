@@ -1,3 +1,5 @@
+"""Pydantic settings model and environment-backed configuration defaults."""
+
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict

@@ -1,3 +1,5 @@
+"""Shared Pydantic base classes for read and update schemas."""
+
 from pydantic import BaseModel, ConfigDict
 
 

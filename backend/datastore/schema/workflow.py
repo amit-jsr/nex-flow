@@ -1,3 +1,5 @@
+"""Pydantic schemas for workflow create, update, read, and template payloads."""
+
 from datetime import datetime
 from typing import Any
 from uuid import UUID

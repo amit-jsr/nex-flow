@@ -1,6 +1,9 @@
+"""FastAPI routes for workflow runs, execution, and run event persistence."""
+
+import asyncio
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,12 +74,26 @@ async def delete_run(run_id: UUID, db: AsyncSession = Depends(get_db)) -> Respon
 
 
 @router.post("/{run_id}/execute", response_model=RunRead)
-async def execute_run(run_id: UUID, db: AsyncSession = Depends(get_db)) -> Run:
-    await get_run_or_404(run_id, db)
-    try:
-        return await WorkflowRunner(db).run(run_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+async def execute_run(
+    run_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> Run:
+    run = await get_run_or_404(run_id, db)
+    if run.status not in ("pending", "failed"):
+        raise HTTPException(status_code=400, detail=f"Run is already {run.status}")
+    background_tasks.add_task(_run_in_background, run_id)
+    return run
+
+
+async def _run_in_background(run_id: UUID) -> None:
+    """Execute a run in the background with its own DB session."""
+    from datastore.database import get_session_factory
+    async with get_session_factory()() as db:
+        try:
+            await WorkflowRunner(db).run(run_id)
+        except Exception:
+            pass  # WorkflowRunner already persists failure state
 
 
 @router.post("/{run_id}/events", response_model=RunEventRead, status_code=status.HTTP_201_CREATED)
