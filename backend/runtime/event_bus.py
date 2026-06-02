@@ -8,11 +8,12 @@ from typing import Any
 
 
 class RunEventBus:
-    def __init__(self) -> None:
+    def __init__(self, max_queue_size: int = 1000) -> None:
+        self.max_queue_size = max_queue_size
         self._subscribers: dict[str, set[asyncio.Queue[dict[str, Any]]]] = defaultdict(set)
 
     def subscribe(self, run_id: str) -> asyncio.Queue[dict[str, Any]]:
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=self.max_queue_size)
         self._subscribers[run_id].add(queue)
         return queue
 
@@ -26,7 +27,12 @@ class RunEventBus:
 
     async def publish(self, run_id: str, event: dict[str, Any]) -> None:
         for queue in list(self._subscribers.get(run_id, set())):
-            await queue.put(event)
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            queue.put_nowait(event)
 
 
 run_event_bus = RunEventBus()

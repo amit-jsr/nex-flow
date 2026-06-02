@@ -1,12 +1,15 @@
 """Tests for the runtime tool registry, agent factory, and event bus."""
 
+from datetime import UTC, datetime
+from uuid import UUID
+
 import pytest
 
-from datastore.model import Agent
+from datastore.model import Agent, RunEvent
 from runtime.event_bus import RunEventBus
 from runtime.agent_factory import AgentFactory, DirectOpenAIAgent, extract_response_text
 from runtime.tool_registry import ToolRegistry, calculator
-from runtime.workflow_runner import ordered_agent_nodes, stream_payload_to_event
+from runtime.workflow_runner import ordered_agent_nodes, run_event_to_payload, stream_payload_to_event
 
 
 class FakeStrandsAgent:
@@ -177,6 +180,38 @@ async def test_run_event_bus_publishes_to_subscribers() -> None:
 
     assert await queue.get() == {"type": "agent_started"}
     bus.unsubscribe("run-1", queue)
+
+
+@pytest.mark.asyncio
+async def test_run_event_bus_drops_oldest_event_when_subscriber_is_slow() -> None:
+    bus = RunEventBus(max_queue_size=1)
+    queue = bus.subscribe("run-1")
+
+    await bus.publish("run-1", {"type": "older"})
+    await bus.publish("run-1", {"type": "newer"})
+
+    assert queue.qsize() == 1
+    assert await queue.get() == {"type": "newer"}
+    bus.unsubscribe("run-1", queue)
+
+
+def test_run_event_to_payload_includes_server_timestamp() -> None:
+    created_at = datetime(2026, 6, 3, 9, 8, 7, tzinfo=UTC)
+    event = RunEvent(
+        id=42,
+        run_id=UUID("11111111-1111-1111-1111-111111111111"),
+        event_type="run_started",
+        content="hello",
+        event_metadata={"source": "test"},
+        tokens_used=3,
+        cost_usd=0.01,
+        created_at=created_at,
+    )
+
+    payload = run_event_to_payload(event)
+
+    assert payload["event_id"] == 42
+    assert payload["created_at"] == "2026-06-03T09:08:07+00:00"
 
 
 def test_ordered_agent_nodes_uses_graph_edges() -> None:

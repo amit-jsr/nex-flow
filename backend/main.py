@@ -11,7 +11,7 @@ import datastore.model  # noqa: F401
 from api.api_router import api_router
 from configs.settings import settings
 from datastore.database import create_tables, get_db, seed_tool_catalog
-from runtime.run_scheduler import resume_queued_runs
+from runtime.run_scheduler import resume_queued_runs, shutdown_scheduled_runs
 
 
 @asynccontextmanager
@@ -19,7 +19,10 @@ async def lifespan(_: FastAPI):
     await create_tables()
     await seed_tool_catalog()
     await resume_queued_runs()
-    yield
+    try:
+        yield
+    finally:
+        await shutdown_scheduled_runs()
 
 
 def create_app() -> FastAPI:

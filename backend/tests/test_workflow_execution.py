@@ -1,5 +1,7 @@
 """Tests for workflow execution, streaming, and event persistence."""
 
+import asyncio
+
 import pytest
 from pydantic import ValidationError
 from uuid import UUID
@@ -113,6 +115,32 @@ def test_run_scheduler_keeps_new_runs_queued_at_capacity() -> None:
         assert run_scheduler.schedule_run(queued_id) is None
         assert queued_id not in run_scheduler._scheduled_run_ids
     finally:
+        run_scheduler._scheduled_run_ids.clear()
+        run_scheduler._scheduled_tasks.clear()
+
+
+@pytest.mark.asyncio
+async def test_run_scheduler_cancels_running_tasks_on_shutdown() -> None:
+    run_scheduler._scheduled_run_ids.clear()
+    run_scheduler._scheduled_tasks.clear()
+    run_id = UUID("22222222-2222-2222-2222-222222222222")
+
+    async def wait_forever() -> None:
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(wait_forever())
+    run_scheduler._scheduled_run_ids.add(run_id)
+    run_scheduler._scheduled_tasks[run_id] = task
+
+    try:
+        cancelled_run_ids = await run_scheduler.shutdown_scheduled_runs()
+
+        assert cancelled_run_ids == [run_id]
+        assert task.cancelled()
+        assert run_id not in run_scheduler._scheduled_run_ids
+        assert run_id not in run_scheduler._scheduled_tasks
+    finally:
+        task.cancel()
         run_scheduler._scheduled_run_ids.clear()
         run_scheduler._scheduled_tasks.clear()
 

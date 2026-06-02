@@ -351,6 +351,7 @@ def utcnow() -> datetime:
 
 def run_event_to_payload(event: RunEvent) -> dict[str, Any]:
     return {
+        "event_id": event.id,
         "type": event.event_type,
         "run_id": str(event.run_id),
         "agent_id": str(event.agent_id) if event.agent_id else None,
@@ -359,4 +360,5 @@ def run_event_to_payload(event: RunEvent) -> dict[str, Any]:
         "metadata": event.event_metadata,
         "tokens_used": event.tokens_used,
         "cost_usd": event.cost_usd,
+        "created_at": event.created_at.isoformat() if event.created_at else None,
     }

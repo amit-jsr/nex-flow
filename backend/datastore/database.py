@@ -49,18 +49,20 @@ async def add_missing_run_columns(connection) -> None:
     def runs_columns(sync_connection) -> set[str]:
         return {column["name"] for column in inspect(sync_connection).get_columns("runs")}
 
-    if "agent_id" in await connection.run_sync(runs_columns):
-        return
+    columns = await connection.run_sync(runs_columns)
 
-    if connection.dialect.name == "postgresql":
+    if "agent_id" not in columns and connection.dialect.name == "postgresql":
         await connection.execute(
             text(
                 "ALTER TABLE runs ADD COLUMN agent_id UUID "
                 "REFERENCES agents(id) ON DELETE SET NULL"
             )
         )
-    else:
+    elif "agent_id" not in columns:
         await connection.execute(text("ALTER TABLE runs ADD COLUMN agent_id CHAR(32)"))
+
+    if "scheduled_at" not in columns:
+        await connection.execute(text("ALTER TABLE runs ADD COLUMN scheduled_at TIMESTAMP WITH TIME ZONE"))
 
 
 async def seed_tool_catalog() -> None:

@@ -102,6 +102,7 @@ class Run(Base):
     output: Mapped[str | None] = mapped_column(Text)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from datastore.schema.common import ReadSchema
 
 
-RunStatus = Literal["init", "running", "completed", "failed", "cancelled"]
+RunStatus = Literal["init", "pending", "running", "completed", "failed", "cancelled"]
 
 
 class RunCreate(BaseModel):
@@ -22,6 +22,7 @@ class RunCreate(BaseModel):
 class WorkflowRunCreate(BaseModel):
     input: str | None = None
     execute: bool = False
+    scheduled_at: datetime | None = None
 
 
 class RunUpdate(BaseModel):
@@ -42,6 +43,7 @@ class RunRead(ReadSchema):
     output: str | None
     total_tokens: int
     total_cost_usd: float
+    scheduled_at: datetime | None
     started_at: datetime | None
     ended_at: datetime | None
     created_at: datetime
