@@ -13,6 +13,12 @@ def test_groq_defaults_are_configured() -> None:
     assert settings.groq_default_model == "openai/gpt-oss-20b"
 
 
+def test_openai_defaults_are_configured() -> None:
+    settings = Settings()
+    assert settings.openai_base_url == "https://api.openai.com/v1"
+    assert settings.openai_default_model == "gpt-4o-mini"
+
+
 def test_telegram_settings_default_to_optional() -> None:
     settings = Settings()
     assert settings.public_url is None

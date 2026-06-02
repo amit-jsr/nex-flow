@@ -4,7 +4,7 @@ import pytest
 
 from datastore.model import Agent
 from runtime.event_bus import RunEventBus
-from runtime.agent_factory import AgentFactory, extract_response_text
+from runtime.agent_factory import AgentFactory, DirectOpenAIAgent, extract_response_text
 from runtime.tool_registry import ToolRegistry, calculator
 from runtime.workflow_runner import ordered_agent_nodes, stream_payload_to_event
 
@@ -64,6 +64,28 @@ def test_agent_factory_uses_strands_openai_model_for_groq_config() -> None:
     assert len(agent.tool_names) == 1
 
 
+def test_agent_factory_falls_back_to_direct_openai_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent_config = Agent(
+        name="Writer",
+        role="writer",
+        system_prompt="Answer directly.",
+        provider="openai",
+        model="gpt-4o-mini",
+        tools=[],
+    )
+    factory = AgentFactory()
+
+    def missing_openai_model(_agent_config: Agent) -> None:
+        raise RuntimeError("strands-agents OpenAI model not available")
+
+    monkeypatch.setattr(factory, "_resolve_model", missing_openai_model)
+
+    agent = factory.build(agent_config)
+
+    assert isinstance(agent, DirectOpenAIAgent)
+    assert agent.model_id == "gpt-4o-mini"
+
+
 def test_extract_response_text_supports_groq_responses_shapes() -> None:
     assert extract_response_text({"output_text": "hello"}) == "hello"
     assert (
@@ -94,6 +116,56 @@ def test_stream_payload_to_event_normalizes_text_and_usage() -> None:
         "tokens_used": 7,
         "cost_usd": 0.001,
     }
+
+
+def test_stream_payload_to_event_handles_strands_text_event() -> None:
+    event = stream_payload_to_event(
+        {
+            "data": "hello",
+            "delta": {"text": "hello"},
+        }
+    )
+
+    assert event["event_type"] == "text_delta"
+    assert event["content"] == "hello"
+    assert event["metadata"] == {}
+
+
+def test_stream_payload_to_event_handles_strands_metadata_event() -> None:
+    event = stream_payload_to_event(
+        {
+            "event": {
+                "metadata": {
+                    "usage": {
+                        "inputTokens": 106,
+                        "outputTokens": 16,
+                        "totalTokens": 122,
+                    },
+                    "metrics": {"latencyMs": 0},
+                }
+            }
+        }
+    )
+
+    assert event["event_type"] == "model_metadata"
+    assert event["content"] is None
+    assert event["tokens_used"] == 122
+    assert len(event["event_type"]) <= 50
+
+
+def test_stream_payload_to_event_serializes_agent_result_metadata() -> None:
+    class FakeResult:
+        def to_dict(self) -> dict[str, str]:
+            return {"type": "agent_result", "message": "done"}
+
+        def __str__(self) -> str:
+            return "done"
+
+    event = stream_payload_to_event({"result": FakeResult()})
+
+    assert event["event_type"] == "agent_result"
+    assert event["content"] == "done"
+    assert event["metadata"]["result"] == {"type": "agent_result", "message": "done"}
 
 
 @pytest.mark.asyncio

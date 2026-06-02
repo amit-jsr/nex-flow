@@ -104,7 +104,7 @@ async def create_configured_run(db: AsyncSession, text: str) -> Run | None:
         return None
     if await db.get(Workflow, workflow_id) is None:
         return None
-    run = Run(workflow_id=workflow_id, input=text, status="pending")
+    run = Run(workflow_id=workflow_id, input=text, status="init")
     db.add(run)
     await db.flush()
     return run

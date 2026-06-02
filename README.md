@@ -122,6 +122,8 @@ Use `.env.example` as the source of truth.
 ### OpenAI
 
 - `OPENAI_API_KEY`
+- `OPENAI_BASE_URL` - default: `https://api.openai.com/v1`
+- `OPENAI_DEFAULT_MODEL` - default: `gpt-4o-mini`
 
 ### Anthropic
 

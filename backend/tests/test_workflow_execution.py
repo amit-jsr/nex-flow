@@ -7,6 +7,8 @@ from uuid import UUID
 from main import app
 from datastore.model import Agent, Base, Run, Workflow
 from datastore.schema import MessageCreate, RunEventCreate, WorkflowCreate
+from runtime import run_scheduler
+from runtime.agent_runner import AgentRunner
 from runtime.workflow_runner import WorkflowRunner
 from templates import WORKFLOW_TEMPLATES
 
@@ -16,8 +18,10 @@ def test_workflow_run_tables_are_registered() -> None:
 
 
 def test_observability_columns_are_registered() -> None:
+    run_columns = set(Base.metadata.tables["runs"].columns.keys())
     run_event_columns = set(Base.metadata.tables["run_events"].columns.keys())
     message_columns = set(Base.metadata.tables["messages"].columns.keys())
+    assert {"workflow_id", "agent_id"} <= run_columns
     assert {"agent_id", "metadata", "tokens_used", "cost_usd"} <= run_event_columns
     assert {"run_id", "agent_id", "metadata"} <= message_columns
 
@@ -28,8 +32,10 @@ def test_workflow_run_routes_are_exposed() -> None:
     assert "/workflows/templates" in paths
     assert "/workflows/templates/{template_key}" in paths
     assert "/workflows/{workflow_id}/runs" in paths
+    assert "/agents/{agent_id}/runs" in paths
     assert "/runs/" in paths
     assert "/runs/{run_id}/execute" in paths
+    assert "/runs/{run_id}/cancel" in paths
     assert "/runs/{run_id}/events" in paths
     assert "/ws/runs/{run_id}" in paths
 
@@ -91,6 +97,24 @@ def test_workflow_graph_validation_rejects_duplicate_node_ids() -> None:
 def test_required_workflow_templates_are_available() -> None:
     template_names = {template["name"] for template in WORKFLOW_TEMPLATES}
     assert {"Research and Summarize", "Answer and Fact Check"} <= template_names
+
+
+def test_run_scheduler_keeps_new_runs_queued_at_capacity() -> None:
+    run_scheduler._scheduled_run_ids.clear()
+    run_scheduler._scheduled_tasks.clear()
+    active_ids = {
+        UUID(f"00000000-0000-0000-0000-{index:012d}")
+        for index in range(run_scheduler.MAX_CONCURRENT_RUNS)
+    }
+    run_scheduler._scheduled_run_ids.update(active_ids)
+
+    try:
+        queued_id = UUID("11111111-1111-1111-1111-111111111111")
+        assert run_scheduler.schedule_run(queued_id) is None
+        assert queued_id not in run_scheduler._scheduled_run_ids
+    finally:
+        run_scheduler._scheduled_run_ids.clear()
+        run_scheduler._scheduled_tasks.clear()
 
 
 class FakeStreamAgent:
@@ -178,7 +202,7 @@ async def test_workflow_runner_executes_two_agents_in_sequence() -> None:
     run = Run(
         id=UUID("44444444-4444-4444-4444-444444444444"),
         workflow_id=workflow.id,
-        status="pending",
+        status="init",
         input="What is NxFlow?",
         total_tokens=0,
         total_cost_usd=0.0,
@@ -205,3 +229,42 @@ async def test_workflow_runner_executes_two_agents_in_sequence() -> None:
     assert result.total_cost_usd == 0.01
     assert len([obj for obj in session.added if obj.__class__.__name__ == "RunEvent"]) == 8
     assert len([obj for obj in session.added if obj.__class__.__name__ == "Message"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_agent_runner_executes_single_agent_run() -> None:
+    agent = Agent(
+        id=UUID("11111111-1111-1111-1111-111111111111"),
+        name="Researcher",
+        role="researcher",
+        system_prompt="Research carefully.",
+        provider="grok",
+        model="grok-3",
+        tools=[],
+        skills=[],
+        interaction_rules={},
+        guardrails={},
+    )
+    run = Run(
+        id=UUID("22222222-2222-2222-2222-222222222222"),
+        agent_id=agent.id,
+        status="init",
+        input="Run just this agent",
+        total_tokens=0,
+        total_cost_usd=0.0,
+    )
+    session = FakeSession({Agent: {agent.id: agent}, Run: {run.id: run}})
+    runner = AgentRunner(
+        db=session,
+        agent_factory=FakeAgentFactory(
+            [[{"type": "text_delta", "text": "agent answer", "usage": {"tokens": 4}}]]
+        ),
+    )
+
+    result = await runner.run(run.id)
+
+    assert result.status == "completed"
+    assert result.output == "agent answer"
+    assert result.total_tokens == 4
+    assert len([obj for obj in session.added if obj.__class__.__name__ == "RunEvent"]) == 5
+    assert len([obj for obj in session.added if obj.__class__.__name__ == "Message"]) == 1

@@ -2,13 +2,14 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db
-from datastore.model import Agent
-from datastore.schema import AgentCreate, AgentRead, AgentUpdate
+from datastore.model import Agent, Run, RunEvent
+from datastore.schema import AgentCreate, AgentRead, AgentUpdate, RunRead, WorkflowRunCreate
+from runtime.run_scheduler import schedule_run
 
 
 router = APIRouter()
@@ -69,3 +70,31 @@ async def delete_agent(agent_id: UUID, db: AsyncSession = Depends(get_db)) -> Re
     await db.delete(agent)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{agent_id}/runs", response_model=RunRead, status_code=status.HTTP_201_CREATED)
+async def create_agent_run(
+    agent_id: UUID,
+    payload: WorkflowRunCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> Run:
+    agent = await get_agent_or_404(agent_id, db)
+    run = Run(agent_id=agent.id, input=payload.input, status="init")
+    db.add(run)
+    await db.flush()
+    db.add(
+        RunEvent(
+            run_id=run.id,
+            agent_id=agent.id,
+            agent_name=agent.name,
+            event_type="run_queued" if payload.execute else "run_created",
+            content=payload.input,
+            event_metadata={"execute": payload.execute, "run_type": "agent"},
+        )
+    )
+    await db.commit()
+    await db.refresh(run)
+    if payload.execute:
+        schedule_run(run.id)
+    return run

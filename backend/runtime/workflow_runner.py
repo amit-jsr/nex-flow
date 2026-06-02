@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -12,6 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datastore.model import Agent, Message, Run, RunEvent, Workflow
 from runtime.agent_factory import AgentFactory
 from runtime.event_bus import RunEventBus, run_event_bus
+
+
+MAX_EVENT_TYPE_LENGTH = 50
 
 
 class WorkflowRunner:
@@ -29,6 +33,8 @@ class WorkflowRunner:
         run = await self.db.get(Run, run_id)
         if run is None:
             raise ValueError("Run not found")
+        if run.status == "cancelled":
+            return run
         if run.workflow_id is None:
             raise ValueError("Run is not attached to a workflow")
 
@@ -52,6 +58,11 @@ class WorkflowRunner:
             run.output = output
             run.ended_at = utcnow()
             await self._add_event(run, "run_completed", content=output)
+        except asyncio.CancelledError:
+            run.status = "cancelled"
+            run.output = run.output or "Run cancelled"
+            run.ended_at = utcnow()
+            raise
         except Exception as exc:
             run.status = "failed"
             run.output = str(exc)
@@ -176,7 +187,11 @@ def stream_payload_to_event(payload: Any) -> dict[str, Any]:
             "cost_usd": 0.0,
         }
 
-    raw_type = payload.get("event_type") or payload.get("type") or payload.get("event") or ""
+    raw_event = payload.get("event")
+    raw_type = payload.get("event_type") or payload.get("type")
+    if raw_type is None and isinstance(raw_event, str):
+        raw_type = raw_event
+    raw_type = raw_type or ""
     raw_type_str = str(raw_type).lower()
 
     # Detect tool-related events from Strands stream
@@ -207,22 +222,32 @@ def stream_payload_to_event(payload: Any) -> dict[str, Any]:
     else:
         # Text delta or generic runtime event
         content = payload.get("text") or payload.get("data") or payload.get("delta") or payload.get("content")
-        event_type = raw_type_str if raw_type_str else "runtime_event"
+        event_type = normalize_event_type(raw_type_str)
         # Normalize common Strands text event names
-        if event_type in ("text", "content_block_delta", "delta", "output"):
+        if event_type in ("text", "content_block_delta", "delta", "message_delta", "output") or (
+            event_type == "runtime_event" and content is not None
+        ):
             event_type = "text_delta"
+        elif isinstance(raw_event, dict) and "metadata" in raw_event:
+            event_type = "model_metadata"
+        elif isinstance(raw_event, dict):
+            event_type = "model_stream"
+        elif "result" in payload:
+            event_type = "agent_result"
+            content = str(payload["result"])
         metadata = {
             key: value
             for key, value in payload.items()
             if key not in {"text", "data", "delta", "content", "usage"}
         }
 
-    usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+    metadata = json_safe(metadata)
+    usage = event_usage(payload)
     # Also check for token counts in Strands model response format
-    input_tokens = int(usage.get("input_tokens", 0) or 0)
-    output_tokens = int(usage.get("output_tokens", 0) or 0)
+    input_tokens = int(usage.get("input_tokens", usage.get("inputTokens", 0)) or 0)
+    output_tokens = int(usage.get("output_tokens", usage.get("outputTokens", 0)) or 0)
     tokens_used = int(
-        usage.get("tokens", 0)
+        usage.get("tokens", usage.get("totalTokens", 0))
         or (input_tokens + output_tokens)
         or payload.get("tokens_used", 0)
         or 0
@@ -236,6 +261,43 @@ def stream_payload_to_event(payload: Any) -> dict[str, Any]:
         "tokens_used": tokens_used,
         "cost_usd": cost_usd,
     }
+
+
+def normalize_event_type(raw_type: str) -> str:
+    event_type = raw_type if raw_type else "runtime_event"
+    if len(event_type) > MAX_EVENT_TYPE_LENGTH:
+        return "runtime_event"
+    return event_type
+
+
+def event_usage(payload: dict[str, Any]) -> dict[str, Any]:
+    usage = payload.get("usage")
+    if isinstance(usage, dict):
+        return usage
+
+    raw_event = payload.get("event")
+    if isinstance(raw_event, dict):
+        metadata = raw_event.get("metadata")
+        if isinstance(metadata, dict) and isinstance(metadata.get("usage"), dict):
+            return metadata["usage"]
+
+    return {}
+
+
+def json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, list | tuple | set):
+        return [json_safe(item) for item in value]
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    if hasattr(value, "to_dict"):
+        return json_safe(value.to_dict())
+    if hasattr(value, "model_dump"):
+        return json_safe(value.model_dump())
+    return str(value)
 
 
 def groq_configured() -> bool:

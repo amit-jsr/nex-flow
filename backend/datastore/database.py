@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncIterator
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.asyncio.engine import AsyncEngine
 
@@ -42,6 +42,25 @@ async def get_db() -> AsyncIterator[AsyncSession]:
 async def create_tables() -> None:
     async with get_engine().begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await add_missing_run_columns(connection)
+
+
+async def add_missing_run_columns(connection) -> None:
+    def runs_columns(sync_connection) -> set[str]:
+        return {column["name"] for column in inspect(sync_connection).get_columns("runs")}
+
+    if "agent_id" in await connection.run_sync(runs_columns):
+        return
+
+    if connection.dialect.name == "postgresql":
+        await connection.execute(
+            text(
+                "ALTER TABLE runs ADD COLUMN agent_id UUID "
+                "REFERENCES agents(id) ON DELETE SET NULL"
+            )
+        )
+    else:
+        await connection.execute(text("ALTER TABLE runs ADD COLUMN agent_id CHAR(32)"))
 
 
 async def seed_tool_catalog() -> None:

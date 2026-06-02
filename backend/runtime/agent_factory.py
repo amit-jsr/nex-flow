@@ -33,6 +33,8 @@ class AgentFactory:
         except RuntimeError as exc:
             if self._is_groq_config(agent_config) and "OpenAI model not available" in str(exc):
                 return self._build_direct_groq_agent(agent_config)
+            if self._is_openai_config(agent_config) and "OpenAI model not available" in str(exc):
+                return self._build_direct_openai_agent(agent_config)
             raise
         return agent_class(
             system_prompt=self._system_prompt(agent_config),
@@ -51,6 +53,11 @@ class AgentFactory:
             or model_id.startswith("groq/")
         )
 
+    def _is_openai_config(self, agent_config: Agent) -> bool:
+        provider = (agent_config.provider or "").lower()
+        model_id = (agent_config.model or "").lower()
+        return provider == "openai" or model_id.startswith("gpt")
+
     def _build_direct_groq_agent(self, agent_config: Agent) -> DirectGroqAgent:
         from configs.settings import settings
 
@@ -58,6 +65,16 @@ class AgentFactory:
             api_key=settings.groq_api_key,
             base_url=settings.groq_base_url,
             model_id=agent_config.model or settings.groq_default_model,
+            system_prompt=self._system_prompt(agent_config),
+        )
+
+    def _build_direct_openai_agent(self, agent_config: Agent) -> DirectOpenAIAgent:
+        from configs.settings import settings
+
+        return DirectOpenAIAgent(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            model_id=agent_config.model or settings.openai_default_model,
             system_prompt=self._system_prompt(agent_config),
         )
 
@@ -109,8 +126,11 @@ class AgentFactory:
             raise RuntimeError("strands-agents OpenAI model not available") from exc
 
         return OpenAIModel(
-            client_args={"api_key": settings.openai_api_key},
-            model_id=model_id or "gpt-4o",
+            client_args={
+                "api_key": settings.openai_api_key,
+                "base_url": settings.openai_base_url,
+            },
+            model_id=model_id or settings.openai_default_model,
             params={"max_tokens": 4096},
         )
 
@@ -191,7 +211,7 @@ class DirectGroqAgent:
     def _create_response(self, prompt: str) -> str:
         if not self.api_key:
             raise RuntimeError(
-                "Groq is not configured. Add your Groq API key in Settings, save it, and rerun the workflow."
+                "Groq is not configured. Add GROQ_API_KEY to your backend .env and restart the API."
             )
 
         payload = {
@@ -224,6 +244,69 @@ class DirectGroqAgent:
             raise RuntimeError(f"Groq API request failed ({exc.code}): {body}") from exc
         except URLError as exc:
             raise RuntimeError(f"Groq API request failed: {exc.reason}") from exc
+
+        return extract_response_text(data)
+
+
+class DirectOpenAIAgent:
+    """Small OpenAI Responses API adapter used if Strands has no OpenAI model adapter."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None,
+        base_url: str,
+        model_id: str,
+        system_prompt: str,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.model_id = model_id
+        self.system_prompt = system_prompt
+
+    async def stream_async(self, prompt: str) -> Any:
+        text = await asyncio.to_thread(self._create_response, prompt)
+        if text:
+            yield {
+                "type": "text_delta",
+                "text": text,
+                "usage": {"tokens": 0, "cost_usd": 0.0},
+                "provider": "openai",
+                "model": self.model_id,
+            }
+
+    def _create_response(self, prompt: str) -> str:
+        if not self.api_key:
+            raise RuntimeError(
+                "OpenAI is not configured. Add OPENAI_API_KEY to your backend .env and restart the API."
+            )
+
+        payload = {
+            "model": self.model_id,
+            "instructions": self.system_prompt,
+            "input": prompt,
+        }
+        req = request.Request(
+            f"{self.base_url}/responses",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "NxFlow/0.1 OpenAIClient",
+            },
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=60) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"OpenAI request failed with HTTP {exc.code}: {body[:500]}"
+            ) from exc
+        except URLError as exc:
+            raise RuntimeError(f"OpenAI request failed: {exc.reason}") from exc
 
         return extract_response_text(data)
 

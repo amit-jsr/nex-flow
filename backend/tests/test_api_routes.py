@@ -124,6 +124,7 @@ async def test_agent_routes_cover_crud_and_filters() -> None:
         created_at=datetime.now(UTC),
     )
     db.scalars_items = [agent]
+    db.register(agent)
 
     created = await agents_api.create_agent(
         AgentCreate(name="Researcher", system_prompt="Research carefully."),
@@ -134,6 +135,21 @@ async def test_agent_routes_cover_crud_and_filters() -> None:
     listed = await agents_api.list_agents(role="researcher", channel=None, limit=100, offset=0, db=db)
     assert listed == [agent]
 
+    scheduled: list[UUID] = []
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(agents_api, "schedule_run", scheduled.append)
+    try:
+        run = await agents_api.create_agent_run(
+            agent.id,
+            WorkflowRunCreate(input="hello agent", execute=True),
+            BackgroundTasks(),
+            db=db,
+        )
+    finally:
+        monkeypatch.undo()
+    assert run.agent_id == agent.id
+    assert scheduled == [run.id]
+
     with pytest.raises(Exception, match="Agent not found"):
         await agents_api.get_agent(_uuid("22222222-2222-2222-2222-222222222222"), db=FakeDB())
 
@@ -141,7 +157,7 @@ async def test_agent_routes_cover_crud_and_filters() -> None:
 @pytest.mark.asyncio
 async def test_message_routes_cover_crud_and_filters() -> None:
     db = FakeDB()
-    run = Run(id=_uuid("11111111-1111-1111-1111-111111111111"), status="pending")
+    run = Run(id=_uuid("11111111-1111-1111-1111-111111111111"), status="init")
     agent = Agent(
         id=_uuid("22222222-2222-2222-2222-222222222222"),
         name="Researcher",
@@ -236,7 +252,7 @@ async def test_workflow_routes_cover_templates_and_runs() -> None:
         edges=[],
         created_at=datetime.now(UTC),
     )
-    run = Run(id=_uuid("22222222-2222-2222-2222-222222222222"), workflow_id=workflow.id, status="pending")
+    run = Run(id=_uuid("22222222-2222-2222-2222-222222222222"), workflow_id=workflow.id, status="init")
     db.register(workflow)
     db.register(run)
     db.scalars_items = [workflow]
@@ -279,6 +295,31 @@ async def test_workflow_routes_cover_templates_and_runs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_workflow_run_execute_schedules_runtime(monkeypatch) -> None:
+    db = FakeDB()
+    workflow = Workflow(
+        id=_uuid("11111111-1111-1111-1111-111111111111"),
+        name="Research Flow",
+        nodes=[{"id": "researcher", "type": "agent"}],
+        edges=[],
+    )
+    db.register(workflow)
+    scheduled: list[UUID] = []
+    monkeypatch.setattr(workflows_api, "schedule_run", scheduled.append)
+
+    run = await workflows_api.create_workflow_run(
+        workflow.id,
+        WorkflowRunCreate(input="hello", execute=True),
+        background_tasks=BackgroundTasks(),
+        db=db,
+    )
+
+    assert scheduled == [run.id]
+    queued_events = [event for event in db.added if isinstance(event, RunEvent)]
+    assert queued_events[-1].event_type == "run_queued"
+
+
+@pytest.mark.asyncio
 async def test_run_routes_cover_crud_and_events() -> None:
     db = FakeDB()
     workflow = Workflow(
@@ -290,7 +331,7 @@ async def test_run_routes_cover_crud_and_events() -> None:
     run = Run(
         id=_uuid("22222222-2222-2222-2222-222222222222"),
         workflow_id=workflow.id,
-        status="pending",
+        status="init",
         input="hello",
         total_tokens=0,
         total_cost_usd=0.0,
@@ -323,6 +364,11 @@ async def test_run_routes_cover_crud_and_events() -> None:
     updated = await runs_api.update_run(run.id, RunUpdate(status="running", total_tokens=5), db=db)
     assert updated.status == "running"
 
+    cancelled = await runs_api.cancel_run(run.id, db=db)
+    assert cancelled.status == "cancelled"
+    cancel_events = [event for event in db.added if isinstance(event, RunEvent) and event.event_type == "run_cancelled"]
+    assert cancel_events
+
     await runs_api.create_run_event(
         run.id,
         RunEventCreate(event_type="text_delta", content="hi"),
@@ -334,6 +380,29 @@ async def test_run_routes_cover_crud_and_events() -> None:
 
     await runs_api.delete_run(run.id, db=db)
     assert db.deleted
+
+
+@pytest.mark.asyncio
+async def test_execute_run_schedules_runtime(monkeypatch) -> None:
+    db = FakeDB()
+    run = Run(
+        id=_uuid("22222222-2222-2222-2222-222222222222"),
+        status="init",
+        input="hello",
+        total_tokens=0,
+        total_cost_usd=0.0,
+        created_at=datetime.now(UTC),
+    )
+    db.register(run)
+    scheduled: list[UUID] = []
+    monkeypatch.setattr(runs_api, "schedule_run", scheduled.append)
+
+    executed = await runs_api.execute_run(run.id, background_tasks=BackgroundTasks(), db=db)
+
+    assert executed.id == run.id
+    assert scheduled == [run.id]
+    queued_events = [event for event in db.added if isinstance(event, RunEvent)]
+    assert queued_events[-1].event_type == "run_queued"
 
 
 @pytest.mark.asyncio

@@ -26,9 +26,9 @@ class Agent(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     role: Mapped[str | None] = mapped_column(String(200))
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
-    provider: Mapped[str] = mapped_column(String(50), default="groq", nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), default="openai", nullable=False)
     model: Mapped[str] = mapped_column(
-        String(100), default="openai/gpt-oss-20b", nullable=False
+        String(100), default="gpt-4o-mini", nullable=False
     )
     tools: Mapped[list[str]] = mapped_column(json_type, default=list, nullable=False)
     schedule: Mapped[dict[str, Any]] = mapped_column(json_type, default=dict, nullable=False)
@@ -94,7 +94,10 @@ class Run(Base):
     workflow_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL")
     )
-    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    agent_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("agents.id", ondelete="SET NULL")
+    )
+    status: Mapped[str] = mapped_column(String(20), default="init", nullable=False)
     input: Mapped[str | None] = mapped_column(Text)
     output: Mapped[str | None] = mapped_column(Text)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -104,6 +107,7 @@ class Run(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     workflow: Mapped[Workflow | None] = relationship(back_populates="runs")
+    agent: Mapped[Agent | None] = relationship()
     events: Mapped[list[RunEvent]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )

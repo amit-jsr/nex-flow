@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db
-from datastore.model import Run, Workflow
+from datastore.model import Run, RunEvent, Workflow
 from datastore.schema import (
     RunRead,
     WorkflowCreate,
@@ -16,7 +16,7 @@ from datastore.schema import (
     WorkflowTemplateRead,
     WorkflowUpdate,
 )
-from runtime.workflow_runner import WorkflowRunner
+from runtime.run_scheduler import schedule_run
 from templates import WORKFLOW_TEMPLATES, get_workflow_template
 
 
@@ -117,19 +117,19 @@ async def create_workflow_run(
     db: AsyncSession = Depends(get_db),
 ) -> Run:
     await get_workflow_or_404(workflow_id, db)
-    run = Run(workflow_id=workflow_id, input=payload.input, status="pending")
+    run = Run(workflow_id=workflow_id, input=payload.input, status="init")
     db.add(run)
+    await db.flush()
+    db.add(
+        RunEvent(
+            run_id=run.id,
+            event_type="run_queued" if payload.execute else "run_created",
+            content=payload.input,
+            event_metadata={"execute": payload.execute},
+        )
+    )
     await db.commit()
     await db.refresh(run)
     if payload.execute:
-        background_tasks.add_task(_run_in_background, run.id)
+        schedule_run(run.id)
     return run
-
-
-async def _run_in_background(run_id: UUID) -> None:
-    from datastore.database import get_session_factory
-    async with get_session_factory()() as db:
-        try:
-            await WorkflowRunner(db).run(run_id)
-        except Exception:
-            pass

@@ -20,8 +20,8 @@ class AgentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     role: str | None = Field(default=None, max_length=200)
     system_prompt: str = Field(min_length=1)
-    provider: str = Field(default="groq", max_length=50)
-    model: str = Field(default="openai/gpt-oss-20b", max_length=100)
+    provider: str = Field(default="openai", max_length=50)
+    model: str = Field(default="gpt-4o-mini", max_length=100)
     tools: list[str] = Field(default_factory=list)
     schedule: dict[str, Any] = Field(default_factory=dict)
     memory_enabled: bool = True

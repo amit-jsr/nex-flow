@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     database_echo: bool = False
     cors_origins: list[str] = ["http://localhost:3000"]
     openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_default_model: str = "gpt-4o-mini"
     anthropic_api_key: str | None = None
     groq_api_key: str | None = None
     groq_base_url: str = "https://api.groq.com/openai/v1"
