@@ -1,6 +1,7 @@
 """Tests for workflow execution, streaming, and event persistence."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -23,7 +24,7 @@ def test_observability_columns_are_registered() -> None:
     run_columns = set(Base.metadata.tables["runs"].columns.keys())
     run_event_columns = set(Base.metadata.tables["run_events"].columns.keys())
     message_columns = set(Base.metadata.tables["messages"].columns.keys())
-    assert {"workflow_id", "agent_id"} <= run_columns
+    assert {"workflow_id", "agent_id", "scheduled_at"} <= run_columns
     assert {"agent_id", "metadata", "tokens_used", "cost_usd"} <= run_event_columns
     assert {"run_id", "agent_id", "metadata"} <= message_columns
 
@@ -117,6 +118,15 @@ def test_run_scheduler_keeps_new_runs_queued_at_capacity() -> None:
     finally:
         run_scheduler._scheduled_run_ids.clear()
         run_scheduler._scheduled_tasks.clear()
+
+
+def test_run_scheduler_calculates_future_delay() -> None:
+    future = datetime.now(UTC) + timedelta(seconds=60)
+    past = datetime.now(UTC) - timedelta(seconds=60)
+
+    assert run_scheduler.seconds_until(future) > 0
+    assert run_scheduler.seconds_until(past) == 0
+    assert run_scheduler.seconds_until(None) == 0
 
 
 @pytest.mark.asyncio

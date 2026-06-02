@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -304,8 +304,12 @@ async def test_workflow_run_execute_schedules_runtime(monkeypatch) -> None:
         edges=[],
     )
     db.register(workflow)
-    scheduled: list[UUID] = []
-    monkeypatch.setattr(workflows_api, "schedule_run", scheduled.append)
+    scheduled: list[tuple[UUID, datetime | None]] = []
+
+    def fake_schedule_run(run_id: UUID, run_at: datetime | None = None):
+        scheduled.append((run_id, run_at))
+
+    monkeypatch.setattr(workflows_api, "schedule_run", fake_schedule_run)
 
     run = await workflows_api.create_workflow_run(
         workflow.id,
@@ -314,9 +318,42 @@ async def test_workflow_run_execute_schedules_runtime(monkeypatch) -> None:
         db=db,
     )
 
-    assert scheduled == [run.id]
+    assert scheduled == [(run.id, None)]
     queued_events = [event for event in db.added if isinstance(event, RunEvent)]
     assert queued_events[-1].event_type == "run_queued"
+
+
+@pytest.mark.asyncio
+async def test_workflow_run_can_be_scheduled(monkeypatch) -> None:
+    db = FakeDB()
+    workflow = Workflow(
+        id=_uuid("11111111-1111-1111-1111-111111111111"),
+        name="Research Flow",
+        nodes=[{"id": "researcher", "type": "agent"}],
+        edges=[],
+    )
+    db.register(workflow)
+    scheduled: list[tuple[UUID, datetime | None]] = []
+
+    def fake_schedule_run(run_id: UUID, run_at: datetime | None = None):
+        scheduled.append((run_id, run_at))
+
+    monkeypatch.setattr(workflows_api, "schedule_run", fake_schedule_run)
+    scheduled_at = datetime.now(UTC) + timedelta(minutes=15)
+
+    run = await workflows_api.create_workflow_run(
+        workflow.id,
+        WorkflowRunCreate(input="hello later", scheduled_at=scheduled_at),
+        background_tasks=BackgroundTasks(),
+        db=db,
+    )
+
+    assert run.status == "pending"
+    assert run.scheduled_at == scheduled_at
+    assert scheduled == [(run.id, scheduled_at)]
+    scheduled_events = [event for event in db.added if isinstance(event, RunEvent)]
+    assert scheduled_events[-1].event_type == "run_scheduled"
+    assert scheduled_events[-1].event_metadata["scheduled_at"] == scheduled_at.isoformat()
 
 
 @pytest.mark.asyncio

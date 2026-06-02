@@ -64,6 +64,7 @@ const consoleHandlerNames = [
   "showAgentDetail",
   "showRunDetail",
   "submitAgentRun",
+  "toggleRunSchedule",
   "toggleToolGroup",
   "triggerRun",
 ];
@@ -933,6 +934,8 @@ function apiWorkflowToUi(workflow){
 }
 function apiRunToUi(run){
   const createdAt=run.created_at||'';
+  const scheduledAt=run.scheduled_at||'';
+  const displayAt=run.status==='pending'&&scheduledAt?scheduledAt:createdAt;
   return {
     id:run.id,
     msg:run.input||'',
@@ -943,9 +946,10 @@ function apiRunToUi(run){
     tokens:run.total_tokens||0,
     cost:run.total_cost_usd||0,
     duration:run.ended_at&&run.started_at?(((new Date(run.ended_at)-new Date(run.started_at))/1000).toFixed(1)+'s'):'—',
-    started:formatRunDateTime(createdAt),
+    started:formatRunDateTime(displayAt),
     createdAt,
-    createdAtMs:parseTimeMs(createdAt),
+    scheduledAt,
+    createdAtMs:parseTimeMs(displayAt),
     output:run.output||'',
     logs:run.output?[{type:run.status==='failed'?'err':run.status==='completed'?'ok':'info',agent:'runtime',msg:run.output,createdAt,createdAtMs:parseTimeMs(createdAt)}]:[],
   };
@@ -1107,7 +1111,7 @@ async function showRunDetail(id){
       <div class="kv"><div class="kv-label">Duration</div><div class="kv-val">\${r.duration}</div></div>
       <div class="kv"><div class="kv-label">Type</div><div class="kv-val">\${r.runType==='agent'?'Agent':'Workflow'}</div></div>
       <div class="kv"><div class="kv-label">Target</div><div class="kv-val">\${agent?.name||wf?.name||'—'}</div></div>
-      <div class="kv"><div class="kv-label">Started</div><div class="kv-val">\${r.started}</div></div>
+      <div class="kv"><div class="kv-label">\${r.status==='pending'&&r.scheduledAt?'Scheduled':'Started'}</div><div class="kv-val">\${r.started}</div></div>
       <div class="kv"><div class="kv-label">Event Totals</div><div class="kv-val">\${totalEventTokens.toLocaleString()} tok · \${totalEventCost.toFixed(4)}</div></div>
     </div>
     <div class="form-group">
@@ -1198,17 +1202,54 @@ async function saveWorkflow(){
     notify('Workflow saved to backend ✓');
   }catch(error){notify(error.message,false);}
 }
+function runScheduleDefaultValue(){
+  const date=new Date(Date.now()+15*60*1000);
+  date.setSeconds(0,0);
+  return date.getFullYear()+'-'+padDatePart(date.getMonth()+1)+'-'+padDatePart(date.getDate())+'T'+padDatePart(date.getHours())+':'+padDatePart(date.getMinutes());
+}
+function toggleRunSchedule(){
+  const mode=document.querySelector('input[name="f-run-timing"]:checked')?.value||'now';
+  const group=document.getElementById('f-run-schedule-group');
+  const field=document.getElementById('f-run-scheduled-at');
+  if(group) group.style.display=mode==='schedule'?'block':'none';
+  if(mode==='schedule'&&field&&!field.value) field.value=runScheduleDefaultValue();
+}
+function populateRunModal(wfId=''){
+  const sel=document.getElementById('f-run-wf');
+  if(sel) sel.innerHTML=DB.workflows.map(w=>\`<option value="\${w.id}" \${w.id===wfId?'selected':''}>\${iconLabel(w.icon)} - \${w.name}</option>\`).join('');
+  const input=document.getElementById('f-run-msg');
+  const session=document.getElementById('f-run-session');
+  const nowRadio=document.querySelector('input[name="f-run-timing"][value="now"]');
+  const scheduledField=document.getElementById('f-run-scheduled-at');
+  if(input) input.value='';
+  if(session) session.value='';
+  if(nowRadio) nowRadio.checked=true;
+  if(scheduledField) scheduledField.value=runScheduleDefaultValue();
+  toggleRunSchedule();
+}
 async function triggerRun(){
   const wfId=document.getElementById('f-run-wf').value;
   if(!wfId){notify('Create a workflow before starting a run',false);return;}
   const msg=document.getElementById('f-run-msg').value.trim();
   if(!msg){notify('Input is required',false);return;}
+  const timing=document.querySelector('input[name="f-run-timing"]:checked')?.value||'now';
+  const scheduledValue=document.getElementById('f-run-scheduled-at')?.value||'';
+  let scheduledAt=null;
+  if(timing==='schedule'){
+    if(!scheduledValue){notify('Scheduled time is required',false);return;}
+    const scheduledDate=new Date(scheduledValue);
+    if(Number.isNaN(scheduledDate.getTime())){notify('Scheduled time is invalid',false);return;}
+    if(scheduledDate.getTime()<=Date.now()){notify('Choose a future scheduled time',false);return;}
+    scheduledAt=scheduledDate.toISOString();
+  }
   try{
-    const run=await apiFetch('/workflows/'+wfId+'/runs',{method:'POST',body:JSON.stringify({input:msg,execute:true})});
+    const payload={input:msg,execute:true};
+    if(scheduledAt) payload.scheduled_at=scheduledAt;
+    const run=await apiFetch('/workflows/'+wfId+'/runs',{method:'POST',body:JSON.stringify(payload)});
     closeModal('runModal');
     await loadBackendData();
-    notify('Run started in backend ✓');
-    subscribeRunEvents(run.id);
+    notify(scheduledAt?'Run scheduled in backend ✓':'Run started in backend ✓');
+    if(!scheduledAt) subscribeRunEvents(run.id);
     setTimeout(loadBackendData,600);
     setTimeout(loadBackendData,2000);
   }catch(error){notify(error.message,false);}
@@ -1328,6 +1369,32 @@ export default function PlatformConsole({ initialPage = "dashboard" }: { initial
     if (!rootRef.current) return;
     rootRef.current.innerHTML = markup;
     rootRef.current.insertAdjacentHTML("beforeend", agentRunModalMarkup);
+    const runSessionGroup = rootRef.current.querySelector("#f-run-session")?.closest(".form-group");
+    if (runSessionGroup && !rootRef.current.querySelector("#f-run-schedule-group")) {
+      runSessionGroup.insertAdjacentHTML(
+        "afterend",
+        `
+        <div class="form-group">
+          <label class="form-label">Run Timing</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+              <input type="radio" name="f-run-timing" value="now" checked onchange="toggleRunSchedule()" style="margin-right:6px">
+              Run now
+            </label>
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+              <input type="radio" name="f-run-timing" value="schedule" onchange="toggleRunSchedule()" style="margin-right:6px">
+              Schedule
+            </label>
+          </div>
+        </div>
+        <div class="form-group" id="f-run-schedule-group" style="display:none">
+          <label class="form-label">Scheduled Time</label>
+          <input class="form-input" id="f-run-scheduled-at" type="datetime-local">
+          <span class="form-hint">Uses your local timezone and runs once at that time</span>
+        </div>
+        `,
+      );
+    }
     const settingsWrap = rootRef.current.querySelector("#page-settings .settings-wrap");
     if (settingsWrap) {
       settingsWrap.className = "settings-wrap";

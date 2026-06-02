@@ -16,7 +16,7 @@ from datastore.schema import (
     WorkflowTemplateRead,
     WorkflowUpdate,
 )
-from runtime.run_scheduler import schedule_run
+from runtime.run_scheduler import schedule_run, seconds_until
 from templates import WORKFLOW_TEMPLATES, get_workflow_template
 
 
@@ -117,19 +117,33 @@ async def create_workflow_run(
     db: AsyncSession = Depends(get_db),
 ) -> Run:
     await get_workflow_or_404(workflow_id, db)
-    run = Run(workflow_id=workflow_id, input=payload.input, status="init")
+    is_future_schedule = seconds_until(payload.scheduled_at) > 0
+    should_execute = payload.execute or payload.scheduled_at is not None
+    run = Run(
+        workflow_id=workflow_id,
+        input=payload.input,
+        status="pending" if is_future_schedule else "init",
+        scheduled_at=payload.scheduled_at,
+    )
     db.add(run)
     await db.flush()
     db.add(
         RunEvent(
             run_id=run.id,
-            event_type="run_queued" if payload.execute else "run_created",
+            event_type="run_scheduled"
+            if is_future_schedule
+            else "run_queued"
+            if should_execute
+            else "run_created",
             content=payload.input,
-            event_metadata={"execute": payload.execute},
+            event_metadata={
+                "execute": should_execute,
+                "scheduled_at": payload.scheduled_at.isoformat() if payload.scheduled_at else None,
+            },
         )
     )
     await db.commit()
     await db.refresh(run)
-    if payload.execute:
-        schedule_run(run.id)
+    if should_execute:
+        schedule_run(run.id, run_at=payload.scheduled_at)
     return run
