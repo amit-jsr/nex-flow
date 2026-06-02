@@ -1211,8 +1211,10 @@ function toggleRunSchedule(){
   const mode=document.querySelector('input[name="f-run-timing"]:checked')?.value||'now';
   const group=document.getElementById('f-run-schedule-group');
   const field=document.getElementById('f-run-scheduled-at');
+  const submitLabel=document.getElementById('f-run-submit-label');
   if(group) group.style.display=mode==='schedule'?'block':'none';
   if(mode==='schedule'&&field&&!field.value) field.value=runScheduleDefaultValue();
+  if(submitLabel) submitLabel.textContent=mode==='schedule'?'Schedule Run':'Start Run';
 }
 function populateRunModal(wfId=''){
   const sel=document.getElementById('f-run-wf');
@@ -1369,9 +1371,17 @@ export default function PlatformConsole({ initialPage = "dashboard" }: { initial
     if (!rootRef.current) return;
     rootRef.current.innerHTML = markup;
     rootRef.current.insertAdjacentHTML("beforeend", agentRunModalMarkup);
+    const runSubmitButton = rootRef.current.querySelector<HTMLButtonElement>("#runModal .modal-ft .btn-primary");
+    if (runSubmitButton && !rootRef.current.querySelector("#f-run-submit-label")) {
+      const icon = runSubmitButton.querySelector("svg")?.outerHTML ?? "";
+      runSubmitButton.id = "f-run-submit";
+      runSubmitButton.innerHTML = `${icon}<span id="f-run-submit-label">Start Run</span>`;
+    }
     const runSessionGroup = rootRef.current.querySelector("#f-run-session")?.closest(".form-group");
-    if (runSessionGroup && !rootRef.current.querySelector("#f-run-schedule-group")) {
-      runSessionGroup.insertAdjacentHTML(
+    const runInputGroup = rootRef.current.querySelector("#f-run-msg")?.closest(".form-group");
+    const runScheduleAnchor = runSessionGroup ?? runInputGroup;
+    if (runScheduleAnchor && !rootRef.current.querySelector("#f-run-schedule-group")) {
+      runScheduleAnchor.insertAdjacentHTML(
         "afterend",
         `
         <div class="form-group">
@@ -1395,6 +1405,7 @@ export default function PlatformConsole({ initialPage = "dashboard" }: { initial
         `,
       );
     }
+    runSessionGroup?.remove();
     const settingsWrap = rootRef.current.querySelector("#page-settings .settings-wrap");
     if (settingsWrap) {
       settingsWrap.className = "settings-wrap";
