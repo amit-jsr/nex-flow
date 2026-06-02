@@ -86,7 +86,12 @@ class WorkflowRunner:
             "agent_started",
             agent=agent_config,
             content=prompt,
-            metadata={"model": agent_config.model, "tools": agent_config.tools},
+            metadata={
+                "provider": agent_config.provider,
+                "model": agent_config.model,
+                "tools": agent_config.tools,
+                "groq_configured": groq_configured(),
+            },
         )
 
         strands_agent = self.agent_factory.build(agent_config)
@@ -231,6 +236,12 @@ def stream_payload_to_event(payload: Any) -> dict[str, Any]:
         "tokens_used": tokens_used,
         "cost_usd": cost_usd,
     }
+
+
+def groq_configured() -> bool:
+    from configs.settings import settings
+
+    return bool(settings.groq_api_key)
 
 
 def ordered_agent_nodes(

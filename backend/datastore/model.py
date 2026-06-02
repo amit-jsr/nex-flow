@@ -26,8 +26,10 @@ class Agent(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     role: Mapped[str | None] = mapped_column(String(200))
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
-    provider: Mapped[str] = mapped_column(String(50), default="grok", nullable=False)
-    model: Mapped[str] = mapped_column(String(100), default="grok-3", nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), default="groq", nullable=False)
+    model: Mapped[str] = mapped_column(
+        String(100), default="openai/gpt-oss-20b", nullable=False
+    )
     tools: Mapped[list[str]] = mapped_column(json_type, default=list, nullable=False)
     schedule: Mapped[dict[str, Any]] = mapped_column(json_type, default=dict, nullable=False)
     memory_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

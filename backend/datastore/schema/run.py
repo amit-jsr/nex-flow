@@ -21,6 +21,7 @@ class RunCreate(BaseModel):
 class WorkflowRunCreate(BaseModel):
     input: str | None = None
     execute: bool = False
+    provider_settings: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunUpdate(BaseModel):

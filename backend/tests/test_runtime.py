@@ -4,7 +4,7 @@ import pytest
 
 from datastore.model import Agent
 from runtime.event_bus import RunEventBus
-from runtime.agent_factory import AgentFactory
+from runtime.agent_factory import AgentFactory, extract_response_text
 from runtime.tool_registry import ToolRegistry, calculator
 from runtime.workflow_runner import ordered_agent_nodes, stream_payload_to_event
 
@@ -18,6 +18,8 @@ def test_tool_registry_resolves_configured_tools() -> None:
     registry = ToolRegistry()
     assert calculator("2 + 3 * 4") == 14
     assert len(registry.resolve(["calculator", "web_search"])) == 2
+    assert "json_parse" in registry.keys()
+    assert "text_extract" in registry.keys()
 
 
 def test_tool_registry_rejects_unknown_tools() -> None:
@@ -44,6 +46,36 @@ def test_agent_factory_builds_strands_agent_from_config() -> None:
     assert "Role: researcher" in agent.kwargs["system_prompt"]
     assert "source review" in agent.kwargs["system_prompt"]
     assert agent.kwargs["callback_handler"] is None
+
+
+def test_agent_factory_uses_strands_openai_model_for_groq_config() -> None:
+    agent_config = Agent(
+        name="Math",
+        role="math",
+        system_prompt="Answer directly.",
+        provider="groq",
+        model="openai/gpt-oss-20b",
+        tools=["calculator"],
+    )
+
+    agent = AgentFactory().build(agent_config)
+
+    assert agent.model.config["model_id"] == "openai/gpt-oss-20b"
+    assert len(agent.tool_names) == 1
+
+
+def test_extract_response_text_supports_groq_responses_shapes() -> None:
+    assert extract_response_text({"output_text": "hello"}) == "hello"
+    assert (
+        extract_response_text(
+            {
+                "output": [
+                    {"content": [{"text": "hello "}, {"text": "world"}]},
+                ]
+            }
+        )
+        == "hello world"
+    )
 
 
 def test_stream_payload_to_event_normalizes_text_and_usage() -> None:

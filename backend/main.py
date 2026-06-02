@@ -10,12 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import datastore.model  # noqa: F401
 from api.api_router import api_router
 from configs.settings import settings
-from datastore.database import create_tables, get_db
+from datastore.database import create_tables, get_db, seed_tool_catalog
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await create_tables()
+    await seed_tool_catalog()
     yield
 
 

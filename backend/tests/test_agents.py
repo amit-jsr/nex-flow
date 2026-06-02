@@ -30,7 +30,8 @@ def test_agent_and_tool_routes_are_exposed() -> None:
 
 def test_agent_defaults_validate() -> None:
     agent = AgentCreate(name="Researcher", system_prompt="Research carefully.")
-    assert agent.model == "grok-3"
+    assert agent.provider == "groq"
+    assert agent.model == "openai/gpt-oss-20b"
     assert agent.memory_enabled is True
     assert agent.schedule == {}
     assert agent.memory_config == {}
@@ -46,6 +47,6 @@ def test_grok_model_names_validate() -> None:
     agent = AgentCreate(
         name="Grok researcher",
         system_prompt="Reason carefully.",
-        model="grok-4.3",
+        model="openai/gpt-oss-20b",
     )
-    assert agent.model == "grok-4.3"
+    assert agent.model == "openai/gpt-oss-20b"
