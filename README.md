@@ -127,11 +127,13 @@ Use `.env.example` as the source of truth.
 
 - `ANTHROPIC_API_KEY`
 
-### xAI / Grok
+### Groq
 
-- `XAI_API_KEY`
-- `XAI_BASE_URL` - default: `https://api.x.ai/v1`
-- `XAI_DEFAULT_MODEL` - default: `grok-4.3`
+- `GROQ_API_KEY`
+- `GROQ_BASE_URL` - default: `https://api.groq.com/openai/v1`
+- `GROQ_DEFAULT_MODEL` - default: `openai/gpt-oss-20b`
+
+Provider keys are backend-only. Do not put model provider API keys in the frontend or in `NEXT_PUBLIC_*` variables.
 
 ### AWS Bedrock
 

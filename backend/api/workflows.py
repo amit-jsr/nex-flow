@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db
-from api.settings import apply_runtime_settings
 from datastore.model import Run, Workflow
 from datastore.schema import (
     RunRead,
@@ -118,7 +117,6 @@ async def create_workflow_run(
     db: AsyncSession = Depends(get_db),
 ) -> Run:
     await get_workflow_or_404(workflow_id, db)
-    apply_runtime_settings(payload.provider_settings)
     run = Run(workflow_id=workflow_id, input=payload.input, status="pending")
     db.add(run)
     await db.commit()
