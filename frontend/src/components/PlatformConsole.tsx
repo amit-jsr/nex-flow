@@ -76,6 +76,7 @@ window.__nxflowCleanup?.();
 ${source}
 window.__nxflowCleanup = () => {
   if (typeof termInterval !== "undefined" && termInterval) clearInterval(termInterval);
+  if (typeof scheduledRunsInterval !== "undefined" && scheduledRunsInterval) clearInterval(scheduledRunsInterval);
   if (window.__nxflowRunSocket) window.__nxflowRunSocket.close();
   window.__nxflowRunSocket = null;
   window.__nxflowRunSocketRunId = "";
@@ -812,7 +813,7 @@ function renderRunStreamLogs(){
     const workflowLabel=wf?iconMark(wf.icon)+' '+wf.name:'No workflow';
     const metricLabel=r.tokens.toLocaleString()+' tok · $'+Number(r.cost||0).toFixed(4)+' · '+r.started;
     return '<div class="stream-log-row" onclick="showRunDetail(\\''+r.id+'\\')">'
-      + '<div class="stream-log-top"><span class="mono">'+r.id+'</span><span class="badge '+statusClass(r.status)+'"><div class="badge-dot"></div>'+r.status+'</span></div>'
+      + '<div class="stream-log-top"><span class="mono">'+r.id+'</span><span class="badge '+statusClass(r.status)+'"><div class="badge-dot"></div>'+runStatusLabel(r.status,r)+'</span></div>'
       + '<div class="stream-log-msg">'+(r.msg||'No input')+'</div>'
       + '<div class="stream-log-meta"><span>'+workflowLabel+'</span><span>'+metricLabel+'</span></div>'
       + '<div class="stream-log-events">'+eventRows+'</div>'
@@ -825,10 +826,35 @@ const runsTableScript = `
 function isCancelableRun(run){
   return run?.status==='init' || run?.status==='pending' || run?.status==='running';
 }
+function runMatchesFilter(run,filter){
+  if(filter==='all') return true;
+  if(filter==='scheduled') return run.status==='pending' && !!run.scheduledAt;
+  if(filter==='completed') return run.status==='completed';
+  return run.status===filter;
+}
+function syncScheduledRunsRefresh(filtered){
+  if(runFilter==='scheduled' && filtered.length && typeof loadBackendData==='function'){
+    if(!scheduledRunsInterval){
+      scheduledRunsInterval=setInterval(()=>{
+        if(currentPage()==='runs' && runFilter==='scheduled') loadBackendData({silent:true});
+        else {
+          clearInterval(scheduledRunsInterval);
+          scheduledRunsInterval=null;
+        }
+      },5000);
+    }
+    return;
+  }
+  if(scheduledRunsInterval){
+    clearInterval(scheduledRunsInterval);
+    scheduledRunsInterval=null;
+  }
+}
 function renderRunsTable(){
   const tablePanel=document.getElementById('runs-table-panel');
   const streamPanel=document.getElementById('runs-stream-panel');
   if(runFilter==='stream'){
+    syncScheduledRunsRefresh([]);
     if(tablePanel) tablePanel.style.display='none';
     if(streamPanel) streamPanel.style.display='grid';
     renderRunStreamLogs();
@@ -837,7 +863,8 @@ function renderRunsTable(){
   }
   if(tablePanel) tablePanel.style.display='block';
   if(streamPanel) streamPanel.style.display='none';
-  const filtered=runFilter==='all'?DB.runs:DB.runs.filter(r=>r.status===runFilter);
+  const filtered=DB.runs.filter(r=>runMatchesFilter(r,runFilter));
+  syncScheduledRunsRefresh(filtered);
   const tbody=document.getElementById('runs-tbody');
   if(!tbody) return;
   if(!filtered.length){
@@ -854,7 +881,7 @@ function renderRunsTable(){
     return '<tr onclick="showRunDetail(\\''+r.id+'\\')">'
       + '<td class="mono run-id-cell" title="'+r.id+'">'+r.id+'</td>'
       + '<td><span class="run-target-name">'+target+'</span></td>'
-      + '<td><span class="badge '+statusClass(r.status)+'"><div class="badge-dot"></div>'+r.status+'</span></td>'
+      + '<td><span class="badge '+statusClass(r.status)+'"><div class="badge-dot"></div>'+runStatusLabel(r.status,r)+'</span></td>'
       + '<td class="mono">'+r.tokens.toLocaleString()+'</td>'
       + '<td class="mono">'+r.duration+'</td>'
       + '<td class="run-started-cell">'+r.started+'</td>'
@@ -1056,7 +1083,8 @@ function workflowPayloadFromForm(){
     is_template:false,
   };
 }
-async function loadBackendData(){
+async function loadBackendData(options={}){
+  const silent=!!options.silent;
   try{
     const [agents,workflows,runs,messages,tools]=await Promise.all([
       apiFetch('/agents/'),
@@ -1077,9 +1105,9 @@ async function loadBackendData(){
     renderPage(currentPage());
     if(currentPage()==='workflows') renderWorkflowsPage();
     if(currentPage()==='telegram') renderTelegram();
-    notify('Backend data loaded ✓');
+    if(!silent) notify('Backend data loaded ✓');
   }catch(error){
-    notify('Using demo data. Backend unavailable: '+error.message,false);
+    if(!silent) notify('Using demo data. Backend unavailable: '+error.message,false);
   }
 }
 async function showRunDetail(id){
@@ -1105,7 +1133,7 @@ async function showRunDetail(id){
   document.getElementById('runDetailBody').innerHTML=\`
     <div class="kv-grid">
       <div class="kv"><div class="kv-label">Run ID</div><div class="kv-val mono" style="font-size:12px">\${r.id}</div></div>
-      <div class="kv"><div class="kv-label">Status</div><div class="kv-val"><span class="badge \${statusClass(r.status)}"><div class="badge-dot"></div>\${r.status}</span></div></div>
+      <div class="kv"><div class="kv-label">Status</div><div class="kv-val"><span class="badge \${statusClass(r.status)}"><div class="badge-dot"></div>\${runStatusLabel(r.status,r)}</span></div></div>
       <div class="kv"><div class="kv-label">Tokens</div><div class="kv-val">\${r.tokens.toLocaleString()}</div></div>
       <div class="kv"><div class="kv-label">Cost</div><div class="kv-val">\${Number(r.cost||0).toFixed(4)}</div></div>
       <div class="kv"><div class="kv-label">Duration</div><div class="kv-val">\${r.duration}</div></div>
@@ -1369,7 +1397,23 @@ export default function PlatformConsole({ initialPage = "dashboard" }: { initial
 
   useEffect(() => {
     if (!rootRef.current) return;
-    rootRef.current.innerHTML = markup;
+    const consoleMarkup = markup
+      .replace(
+        `<div class="tab active" onclick="filterRuns('stream',this)">Logs</div>
+        <div class="tab" onclick="filterRuns('all',this)">All</div>
+        <div class="tab" onclick="filterRuns('running',this)">Running</div>
+        <div class="tab" onclick="filterRuns('completed',this)">Completed</div>
+        <div class="tab" onclick="filterRuns('failed',this)">Failed</div>`,
+        `<div class="tab active" onclick="filterRuns('all',this)">All</div>
+        <div class="tab" onclick="filterRuns('scheduled',this)">Scheduled</div>
+        <div class="tab" onclick="filterRuns('completed',this)">Completed</div>
+        <div class="tab" onclick="filterRuns('stream',this)">Logs</div>`,
+      )
+      .replace(
+        "filterRuns('all',document.querySelectorAll('#runs-tabs .tab')[1])",
+        "filterRuns('all',document.querySelectorAll('#runs-tabs .tab')[0])",
+      );
+    rootRef.current.innerHTML = consoleMarkup;
     rootRef.current.insertAdjacentHTML("beforeend", agentRunModalMarkup);
     const runSubmitButton = rootRef.current.querySelector<HTMLButtonElement>("#runModal .modal-ft .btn-primary");
     if (runSubmitButton && !rootRef.current.querySelector("#f-run-submit-label")) {
@@ -1552,6 +1596,12 @@ export default function PlatformConsole({ initialPage = "dashboard" }: { initial
       .replace(
         "const PAGE_ACTIONS={",
         'const PAGE_ACTIONS={\n  settings:`<button class="btn btn-primary" onclick="saveSettings()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save Settings</button>`,',
+      )
+      .replace("let runFilter = 'stream';", "let runFilter = 'all';")
+      .replace("let termInterval = null;", "let termInterval = null;\nlet scheduledRunsInterval = null;")
+      .replace(
+        "function statusClass(s){return{completed:'b-green',running:'b-blue',init:'b-blue',pending:'b-blue',failed:'b-red',active:'b-green',busy:'b-amber',idle:'b-muted'}[s]||'b-muted'}",
+        "function statusClass(s){return{completed:'b-green',running:'b-blue',init:'b-blue',pending:'b-blue',failed:'b-red',cancelled:'b-muted',active:'b-green',busy:'b-amber',idle:'b-muted'}[s]||'b-muted'}\nfunction runStatusLabel(s,run){if(s==='pending'&&run?.scheduledAt)return 'Scheduled';return{init:'started',pending:'started',running:'in-progress',completed:'Completed',failed:'Failed',cancelled:'Cancelled'}[s]||s}",
       )
       .replace(/dashboard:`<button class="btn btn-primary".*?New Run<\/button>`/, "dashboard:``")
       .replace(

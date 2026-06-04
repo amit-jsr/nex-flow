@@ -216,6 +216,29 @@ async def test_message_routes_cover_crud_and_filters() -> None:
 
 
 @pytest.mark.asyncio
+async def test_telegram_outbound_reply_is_persisted() -> None:
+    db = FakeDB()
+    run = Run(
+        id=_uuid("11111111-1111-1111-1111-111111111111"),
+        status="completed",
+        output="done",
+    )
+    db.register(run)
+
+    message = await telegram_api.persist_outbound_reply(
+        db, run.id, chat_id="99", content="done"
+    )
+
+    assert message.direction == "outbound"
+    assert message.channel == "telegram"
+    assert message.run_id == run.id
+    assert message.sender_id == "99"
+    assert message.message_metadata == {"chat_id": "99"}
+    assert db.committed == 1
+    assert db.refreshed == [message]
+
+
+@pytest.mark.asyncio
 async def test_tool_routes_cover_crud_and_conflict() -> None:
     db = FakeDB()
     tool = Tool(
@@ -496,11 +519,20 @@ async def test_telegram_route_and_websocket_flow() -> None:
     db.register(agent)
 
     original_client = telegram_api.TelegramBotClient
+    original_token = telegram_api.settings.telegram_bot_token
+    original_agent_id = telegram_api.settings.telegram_default_agent_id
+    original_workflow_id = telegram_api.settings.telegram_default_workflow_id
+    original_secret = telegram_api.settings.telegram_webhook_secret
+    original_chat_ids = telegram_api.settings.telegram_allowed_chat_ids
+    original_sender_ids = telegram_api.settings.telegram_allowed_sender_ids
     telegram_api.TelegramBotClient = FakeTelegramClient  # type: ignore[assignment]
     try:
         telegram_api.settings.telegram_bot_token = None
         telegram_api.settings.telegram_default_agent_id = str(agent.id)
         telegram_api.settings.telegram_default_workflow_id = str(workflow.id)
+        telegram_api.settings.telegram_webhook_secret = None
+        telegram_api.settings.telegram_allowed_chat_ids = None
+        telegram_api.settings.telegram_allowed_sender_ids = None
 
         response = await telegram_api.receive_update(
             {
@@ -516,7 +548,7 @@ async def test_telegram_route_and_websocket_flow() -> None:
             db=db,
         )
         assert response["command"] == "start"
-        assert response["run_id"] is not None
+        assert response["run_id"] is None
 
         response = await telegram_api.receive_update(
             {
@@ -549,3 +581,9 @@ async def test_telegram_route_and_websocket_flow() -> None:
         assert ws.sent[1]["type"] == "run_started"
     finally:
         telegram_api.TelegramBotClient = original_client  # type: ignore[assignment]
+        telegram_api.settings.telegram_bot_token = original_token
+        telegram_api.settings.telegram_default_agent_id = original_agent_id
+        telegram_api.settings.telegram_default_workflow_id = original_workflow_id
+        telegram_api.settings.telegram_webhook_secret = original_secret
+        telegram_api.settings.telegram_allowed_chat_ids = original_chat_ids
+        telegram_api.settings.telegram_allowed_sender_ids = original_sender_ids

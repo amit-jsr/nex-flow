@@ -1,9 +1,10 @@
 """FastAPI routes for Telegram webhook ingestion and outbound replies."""
 
-from typing import Any
+from secrets import compare_digest
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db
@@ -19,14 +20,20 @@ router = APIRouter()
 async def receive_update(
     update: dict[str, Any],
     background_tasks: BackgroundTasks,
+    telegram_secret: Annotated[
+        str | None, Header(alias="X-Telegram-Bot-Api-Secret-Token")
+    ] = None,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
+    verify_webhook_secret(telegram_secret)
     parsed = parse_telegram_update(update)
     if parsed is None:
         return {"ok": True, "accepted": False, "update_id": update.get("update_id")}
+    if not telegram_sender_allowed(parsed.chat_id, parsed.sender_id):
+        raise HTTPException(status_code=403, detail="Telegram sender is not allowed")
 
     agent_id = await configured_agent_id(db)
-    run = await create_configured_run(db, parsed.text)
+    run = None if parsed.is_start else await create_configured_run(db, parsed.text)
     message = Message(
         run_id=run.id if run else None,
         agent_id=agent_id,
@@ -88,7 +95,25 @@ async def _execute_and_reply(run_id: UUID, chat_id: str, token: str) -> None:
         except Exception as exc:
             reply = f"Workflow failed: {exc}"
 
-    await TelegramBotClient(token).send_message(chat_id, reply)
+        await TelegramBotClient(token).send_message(chat_id, reply)
+        await persist_outbound_reply(db, run_id, chat_id, reply)
+
+
+async def persist_outbound_reply(
+    db: AsyncSession, run_id: UUID, chat_id: str, content: str
+) -> Message:
+    message = Message(
+        run_id=run_id,
+        channel="telegram",
+        direction="outbound",
+        content=content,
+        sender_id=chat_id,
+        message_metadata={"chat_id": chat_id},
+    )
+    db.add(message)
+    await db.commit()
+    await db.refresh(message)
+    return message
 
 
 async def configured_agent_id(db: AsyncSession) -> UUID | None:
@@ -108,6 +133,30 @@ async def create_configured_run(db: AsyncSession, text: str) -> Run | None:
     db.add(run)
     await db.flush()
     return run
+
+
+def verify_webhook_secret(provided: str | None) -> None:
+    expected = settings.telegram_webhook_secret
+    if not expected:
+        return
+    if not provided or not compare_digest(provided, expected):
+        raise HTTPException(status_code=403, detail="Invalid Telegram webhook secret")
+
+
+def parse_id_list(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    return {item.strip() for item in value.split(",") if item.strip()}
+
+
+def telegram_sender_allowed(chat_id: str, sender_id: str | None) -> bool:
+    allowed_chat_ids = parse_id_list(settings.telegram_allowed_chat_ids)
+    allowed_sender_ids = parse_id_list(settings.telegram_allowed_sender_ids)
+    if not allowed_chat_ids and not allowed_sender_ids:
+        return True
+    if chat_id in allowed_chat_ids:
+        return True
+    return sender_id is not None and sender_id in allowed_sender_ids
 
 
 def parse_uuid(value: str | None) -> UUID | None:

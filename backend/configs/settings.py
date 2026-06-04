@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_default_agent_id: str | None = None
     telegram_default_workflow_id: str | None = None
+    telegram_webhook_secret: str | None = None
+    telegram_allowed_chat_ids: str | None = None
+    telegram_allowed_sender_ids: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=ROOT_DIR / ".env",

@@ -1,8 +1,17 @@
 """Tests for Telegram parsing, replies, and client behavior."""
 
+import pytest
+from fastapi import HTTPException
+
+from api import telegram as telegram_api
+from api.telegram import (
+    parse_id_list,
+    parse_uuid,
+    telegram_sender_allowed,
+    verify_webhook_secret,
+)
 from main import app
 from channels import TelegramBotClient, parse_telegram_update, queued_run_reply, start_reply
-from api.telegram import parse_uuid
 
 
 def test_telegram_and_health_routes_are_exposed() -> None:
@@ -56,6 +65,49 @@ def test_parse_telegram_ignores_non_text_updates() -> None:
 def test_parse_uuid_ignores_missing_or_invalid_values() -> None:
     assert parse_uuid(None) is None
     assert parse_uuid("not-a-uuid") is None
+
+
+def test_parse_id_list_trims_empty_items() -> None:
+    assert parse_id_list(" 1,2, , 3 ") == {"1", "2", "3"}
+    assert parse_id_list(None) == set()
+
+
+def test_telegram_sender_allowed_defaults_to_open_demo_mode() -> None:
+    original_chats = telegram_api.settings.telegram_allowed_chat_ids
+    original_senders = telegram_api.settings.telegram_allowed_sender_ids
+    try:
+        telegram_api.settings.telegram_allowed_chat_ids = None
+        telegram_api.settings.telegram_allowed_sender_ids = None
+        assert telegram_sender_allowed("chat-1", "sender-1") is True
+    finally:
+        telegram_api.settings.telegram_allowed_chat_ids = original_chats
+        telegram_api.settings.telegram_allowed_sender_ids = original_senders
+
+
+def test_telegram_sender_allowed_checks_chat_or_sender() -> None:
+    original_chats = telegram_api.settings.telegram_allowed_chat_ids
+    original_senders = telegram_api.settings.telegram_allowed_sender_ids
+    try:
+        telegram_api.settings.telegram_allowed_chat_ids = "chat-1,chat-2"
+        telegram_api.settings.telegram_allowed_sender_ids = "sender-1"
+        assert telegram_sender_allowed("chat-2", None) is True
+        assert telegram_sender_allowed("chat-9", "sender-1") is True
+        assert telegram_sender_allowed("chat-9", "sender-9") is False
+    finally:
+        telegram_api.settings.telegram_allowed_chat_ids = original_chats
+        telegram_api.settings.telegram_allowed_sender_ids = original_senders
+
+
+def test_verify_webhook_secret_requires_matching_header() -> None:
+    original_secret = telegram_api.settings.telegram_webhook_secret
+    try:
+        telegram_api.settings.telegram_webhook_secret = "secret-123"
+        verify_webhook_secret("secret-123")
+        with pytest.raises(HTTPException) as exc:
+            verify_webhook_secret("wrong")
+        assert exc.value.status_code == 403
+    finally:
+        telegram_api.settings.telegram_webhook_secret = original_secret
 
 
 def test_telegram_reply_texts_are_stable() -> None:
