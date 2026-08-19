@@ -59,7 +59,7 @@ def test_parse_uuid_ignores_missing_or_invalid_values() -> None:
 
 
 def test_telegram_reply_texts_are_stable() -> None:
-    assert start_reply() == "NxFlow bot is alive."
+    assert start_reply() == "NexFlow bot is alive."
     assert queued_run_reply(None) == (
         "Message received. Configure TELEGRAM_DEFAULT_WORKFLOW_ID to run a workflow."
     )

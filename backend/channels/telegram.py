@@ -74,7 +74,7 @@ def parse_telegram_update(update: dict[str, Any]) -> TelegramMessage | None:
 
 
 def start_reply() -> str:
-    return "NxFlow bot is alive."
+    return "NexFlow bot is alive."
 
 
 def queued_run_reply(run_id: str | None) -> str:

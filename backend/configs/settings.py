@@ -9,8 +9,8 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    app_name: str = "NxFlow API"
-    database_url: str = "postgresql+asyncpg://nxflow:nxflow@localhost:5432/nxflow"
+    app_name: str = "NexFlow API"
+    database_url: str = "postgresql+asyncpg://nexflow:nexflow@localhost:5432/nexflow"
     database_echo: bool = False
     cors_origins: list[str] = ["http://localhost:3000"]
     openai_api_key: str | None = None

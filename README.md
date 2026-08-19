@@ -1,6 +1,6 @@
-# NxFlow Agent Platform
+# NexFlow Agent Platform
 
-NxFlow is a local-first AI agent orchestration platform for creating agents, wiring them into workflows, running real tasks, monitoring live execution, and chatting with at least one agent through Telegram.
+NexFlow is a local-first AI agent orchestration platform for creating agents, wiring them into workflows, running real tasks, monitoring live execution, and chatting with at least one agent through Telegram.
 
 It uses:
 
@@ -45,7 +45,7 @@ PostgreSQL persistence
 
 ## Why Strands
 
-NxFlow uses Strands Agents only, intentionally. The runtime stays small and inspectable while still executing real agent logic:
+NexFlow uses Strands Agents only, intentionally. The runtime stays small and inspectable while still executing real agent logic:
 
 - Agents are created from persisted configs: prompt, role, provider, model, tools, memory, channel, guardrails, limits.
 - Workflows run as a sequential async pipeline, so each agent's output becomes the next agent's input.

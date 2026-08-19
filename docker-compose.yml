@@ -1,18 +1,18 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: nxflow-postgres
+    container_name: nexflow-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-nxflow}
-      POSTGRES_USER: ${POSTGRES_USER:-nxflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nxflow}
+      POSTGRES_DB: ${POSTGRES_DB:-nexflow}
+      POSTGRES_USER: ${POSTGRES_USER:-nexflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexflow}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nxflow} -d ${POSTGRES_DB:-nxflow}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nexflow} -d ${POSTGRES_DB:-nexflow}"]
       interval: 5s
       timeout: 5s
       retries: 10

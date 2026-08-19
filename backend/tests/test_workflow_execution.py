@@ -179,7 +179,7 @@ async def test_workflow_runner_executes_two_agents_in_sequence() -> None:
         id=UUID("44444444-4444-4444-4444-444444444444"),
         workflow_id=workflow.id,
         status="pending",
-        input="What is NxFlow?",
+        input="What is NexFlow?",
         total_tokens=0,
         total_cost_usd=0.0,
     )
